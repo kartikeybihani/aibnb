@@ -149,7 +149,7 @@ module.exports = async function handler(req, res) {
 
     const msg = await anthropic.messages.create({
       model: "claude-3-5-haiku-20241022",
-      max_tokens: 3000,
+      max_tokens: 4000,
       system,
       messages: [{ role: "user", content: user }],
     });
@@ -216,11 +216,19 @@ module.exports = async function handler(req, res) {
     });
   } catch (err) {
     console.error("generateOptions error:", err);
+    console.error("Error details:", {
+      message: err?.message,
+      name: err?.name,
+      stack: err?.stack,
+    });
     const fallback = buildFallback();
     res.status(200).json({
       status: "ok",
       options: fallback,
-      meta: { fallback: true },
+      meta: {
+        fallback: true,
+        error: err?.message || "Unknown error",
+      },
     });
   }
 };
@@ -359,9 +367,56 @@ function diffDays(a, b) {
 function tryParseJson(txt) {
   try {
     return JSON.parse(txt);
-  } catch {
-    const m = txt.match(/\{[\s\S]*\}$/);
-    return m ? JSON.parse(m[0]) : {};
+  } catch (error) {
+    console.log("JSON parse error:", error.message);
+    console.log("Attempting to fix truncated JSON...");
+
+    // Try to find the last complete object/array and parse that
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        return JSON.parse(m[0]);
+      } catch (e) {
+        console.log("Still failed to parse, trying to fix truncated JSON...");
+
+        // Try to fix common truncation issues
+        let fixed = m[0];
+
+        // If it ends with a quote, try to close it
+        if (fixed.match(/"[^"]*$/)) {
+          fixed = fixed.replace(/"[^"]*$/, '""');
+        }
+
+        // If it ends with a comma, remove it
+        if (fixed.match(/,\s*$/)) {
+          fixed = fixed.replace(/,\s*$/, "");
+        }
+
+        // Try to close any open arrays/objects
+        const openBraces = (fixed.match(/\{/g) || []).length;
+        const closeBraces = (fixed.match(/\}/g) || []).length;
+        const openBrackets = (fixed.match(/\[/g) || []).length;
+        const closeBrackets = (fixed.match(/\]/g) || []).length;
+
+        // Add missing closing brackets
+        for (let i = 0; i < openBrackets - closeBrackets; i++) {
+          fixed += "]";
+        }
+
+        // Add missing closing braces
+        for (let i = 0; i < openBraces - closeBraces; i++) {
+          fixed += "}";
+        }
+
+        try {
+          return JSON.parse(fixed);
+        } catch (e2) {
+          console.log("Still failed after fixing:", e2.message);
+          return {};
+        }
+      }
+    }
+    return {};
   }
 }
 
