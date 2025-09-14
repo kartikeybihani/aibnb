@@ -278,13 +278,17 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
       availableOptionsCount: availableOptions?.length || 0,
       currentIndex: currentRestaurantIndex,
       currentRestaurant: currentRestaurant?.name || currentRestaurant?.title,
-      isAPIData: !!(options?.restaurants?.length && !options?.isFallback && 
-        !options?.restaurants?.some(r => 
-          r.title?.includes("Sample") || 
-          r.title?.includes("Kissaten") || 
-          r.title?.includes("Tokyo") ||
-          r.city === "Tokyo"
-        )),
+      isAPIData: !!(
+        options?.restaurants?.length &&
+        !options?.isFallback &&
+        !options?.restaurants?.some(
+          (r) =>
+            r.title?.includes("Sample") ||
+            r.title?.includes("Kissaten") ||
+            r.title?.includes("Tokyo") ||
+            r.city === "Tokyo"
+        )
+      ),
       activitiesCount: options?.activities?.length || 0,
       swipeData,
     });

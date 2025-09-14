@@ -58,7 +58,10 @@ export default function LoadingScreen({
   // Fetch options from generateOptions API
   const fetchOptions = async () => {
     try {
-      console.log(`🎯 Fetching options for intake (retry ${retryCount}):`, intake);
+      console.log(
+        `🎯 Fetching options for intake (retry ${retryCount}):`,
+        intake
+      );
 
       if (!intake) {
         throw new Error("No intake data provided");
@@ -149,11 +152,12 @@ export default function LoadingScreen({
         options.activities.length > 0;
 
       // Check if this is fallback data (Tokyo restaurants when expecting NYC)
-      const isFallbackData = options.restaurants?.some((r) => 
-        r.title?.includes("Sample") || 
-        r.title?.includes("Kissaten") || 
-        r.title?.includes("Tokyo") ||
-        r.city === "Tokyo"
+      const isFallbackData = options.restaurants?.some(
+        (r) =>
+          r.title?.includes("Sample") ||
+          r.title?.includes("Kissaten") ||
+          r.title?.includes("Tokyo") ||
+          r.city === "Tokyo"
       );
 
       if (hasValidData && !isFallbackData) {
@@ -175,17 +179,27 @@ export default function LoadingScreen({
         });
       } else {
         if (retryCount < MAX_RETRIES) {
-          console.log(`⚠️ Options loaded but insufficient data, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
-          setRetryCount(prev => prev + 1);
+          console.log(
+            `⚠️ Options loaded but insufficient data, retrying... (${
+              retryCount + 1
+            }/${MAX_RETRIES})`
+          );
+          setRetryCount((prev) => prev + 1);
           setTimeout(() => {
             fetchOptions();
           }, 2000);
         } else {
-          console.log("❌ Max retries reached, proceeding with whatever data we have");
+          console.log(
+            "❌ Max retries reached, proceeding with whatever data we have"
+          );
           // Proceed anyway after max retries
           navigation.navigate("SwipeScreen", {
             intake,
-            options: options || { restaurants: [], activities: [], isFallback: true },
+            options: options || {
+              restaurants: [],
+              activities: [],
+              isFallback: true,
+            },
           });
         }
       }
