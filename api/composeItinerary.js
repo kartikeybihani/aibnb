@@ -94,7 +94,7 @@ module.exports = async function handler(req, res) {
     const user = userPrompt(intake, options, validatedSwipes);
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 4000,
       system,
       messages: [{ role: "user", content: user }],
@@ -110,7 +110,7 @@ module.exports = async function handler(req, res) {
       status: "ok",
       itinerary,
       meta: {
-        model: "claude-3-5-sonnet-20240620",
+        model: "claude-3-5-haiku-20241022",
         swipesUsed: validatedSwipes.totalSwiped,
         likedItems: validatedSwipes.liked.length,
         dislikedItems: validatedSwipes.disliked.length,
