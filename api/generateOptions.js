@@ -30,16 +30,7 @@ const ExampleBase = z.object({
 
       // activity extras
       type: z
-        .enum([
-          "sightseeing",
-          "adventure",
-          "cultural",
-          "relaxation",
-          "class",
-          "tour",
-          "shopping",
-          "nightlife",
-        ])
+        .enum(["outdoor", "museum", "tour", "shopping", "nightlife", "class"])
         .optional(),
       duration: z.string().optional(),
       difficulty: z.enum(["easy", "moderate", "challenging"]).optional(),
@@ -359,7 +350,7 @@ ExampleItemDining extends ExampleItem with {
   "metadata": { "cuisine": "Ramen", "meal_type": "breakfast|lunch|dinner|snack", "amenities": ["reservation recommended"] }
 }
 ExampleItemActivity extends ExampleItem with {
-  "metadata": { "type": "sightseeing|adventure|cultural|relaxation|class|tour|shopping|nightlife", "duration": "2 hours|half day|120 min", "difficulty": "easy|moderate|challenging", "best_time": "morning|afternoon|evening|anytime", "ticket_required": true }
+  "metadata": { "type": "outdoor|museum|tour|shopping|nightlife|class", "duration": "2 hours|half day|120 min", "difficulty": "easy|moderate|challenging", "best_time": "morning|afternoon|evening|anytime", "ticket_required": true }
 }
 Restaurant = {
   "id": "string", "kind": "restaurant", "title": "name", "city": "City", "country": "Country",
@@ -567,12 +558,26 @@ function parseDuration(s) {
 
 function mapActivityType(t) {
   const s = String(t || "").toLowerCase();
-  if (["museum", "gallery"].some((k) => s.includes(k))) return "museum";
+
+  // Direct matches first
+  if (s === "museum") return "museum";
+  if (s === "tour") return "tour";
+  if (s === "shopping") return "shopping";
+  if (s === "nightlife") return "nightlife";
+  if (s === "class") return "class";
+  if (s === "outdoor") return "outdoor";
+
+  // Map other activity types to allowed categories
+  if (["museum", "gallery", "cultural"].some((k) => s.includes(k)))
+    return "museum";
   if (["shop", "shopping", "market"].some((k) => s.includes(k)))
     return "shopping";
   if (["night", "bar", "club"].some((k) => s.includes(k))) return "nightlife";
   if (["class", "workshop", "cook"].some((k) => s.includes(k))) return "class";
-  if (["tour", "walk", "guided"].some((k) => s.includes(k))) return "tour";
+  if (["tour", "walk", "guided", "sightseeing"].some((k) => s.includes(k)))
+    return "tour";
+  if (["adventure", "relaxation"].some((k) => s.includes(k))) return "outdoor";
+
   return "outdoor";
 }
 
@@ -695,8 +700,8 @@ function polishPayload(payload, cityFallback, scaled) {
     city: a.city || cityFallback,
     rating_hint: typeof a.rating_hint === "number" ? a.rating_hint : 0.5,
     category: Array.isArray(a.category)
-      ? a.category[0] || "tour"
-      : a.category || "tour",
+      ? mapActivityType(a.category[0]) || "tour"
+      : mapActivityType(a.category) || "tour",
     source: "ai",
   }));
   activities = dedupeByNameCity(activities).slice(0, scaled.activities);
