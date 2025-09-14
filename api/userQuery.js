@@ -57,7 +57,19 @@ const REQUIRED_KEYS = [
 ]; // not used, OK to remove
 
 module.exports = async function handler(req, res) {
-  console.log("Handler called with method:", req.method);
+  const requestId = Math.random().toString(36).substring(7);
+  const timestamp = new Date().toISOString();
+
+  console.log(`🚀 [${requestId}] Handler called:`, {
+    method: req.method,
+    url: req.url,
+    headers: {
+      "user-agent": req.headers["user-agent"],
+      origin: req.headers.origin,
+      "content-type": req.headers["content-type"],
+    },
+    timestamp,
+  });
 
   // Enable CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -65,11 +77,13 @@ module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
+    console.log(`✅ [${requestId}] CORS preflight request handled`);
     res.status(200).end();
     return;
   }
 
   if (req.method !== "POST") {
+    console.log(`❌ [${requestId}] Invalid method: ${req.method}`);
     res.status(405).json({ error: "POST only" });
     return;
   }
@@ -79,36 +93,68 @@ module.exports = async function handler(req, res) {
   const partialIntake = body.partialIntake;
   const sessionId = body.sessionId;
 
+  console.log(`📥 [${requestId}] Request body:`, {
+    hasUserText: !!userText,
+    userTextLength: userText?.length || 0,
+    hasPartialIntake: !!partialIntake,
+    sessionId,
+    bodyKeys: Object.keys(body),
+  });
+
   if (!userText && !partialIntake) {
+    console.log(`❌ [${requestId}] Missing required fields`);
     res.status(400).json({ error: "Provide userText or partialIntake" });
     return;
   }
 
   try {
-    console.log("Processing request:", { userText, partialIntake, sessionId });
+    console.log(`🔄 [${requestId}] Processing request:`, {
+      userText:
+        userText?.substring(0, 100) + (userText?.length > 100 ? "..." : ""),
+      partialIntake,
+      sessionId,
+    });
 
     let extracted = {};
     if (userText) {
-      console.log("Extracting intake from text:", userText);
+      console.log(`🤖 [${requestId}] Extracting intake from text...`);
       extracted = await extractIntakeFromText(userText);
-      console.log("Extracted:", extracted);
+      console.log(`✅ [${requestId}] Extracted intake:`, extracted);
     }
 
-    console.log("Processing intake...");
-    processIntake(partialIntake || {}, extracted || {}, sessionId, res);
+    console.log(`⚙️ [${requestId}] Processing intake...`);
+    processIntake(
+      partialIntake || {},
+      extracted || {},
+      sessionId,
+      res,
+      requestId
+    );
   } catch (err) {
-    console.error("API Error:", err);
-    console.error("Error stack:", err.stack);
+    console.error(`💥 [${requestId}] API Error:`, {
+      message: err?.message,
+      name: err?.name,
+      stack: err?.stack,
+      timestamp,
+    });
+
     res.status(500).json({
       error: String(err?.message || err),
       type: err?.name || "UnknownError",
+      requestId,
     });
   }
 };
 
 async function extractIntakeFromText(userText) {
+  const requestId = Math.random().toString(36).substring(7);
+
   try {
-    console.log("Starting Anthropic API call...");
+    console.log(`🤖 [${requestId}] Starting Anthropic API call...`, {
+      userTextLength: userText?.length,
+      hasApiKey: !!process.env.ANTHROPIC_API_KEY,
+      timestamp: new Date().toISOString(),
+    });
 
     const system =
       "You are a travel intake parser.\n" +
@@ -147,6 +193,13 @@ async function extractIntakeFromText(userText) {
       },
     };
 
+    console.log(`📤 [${requestId}] Sending request to Anthropic...`, {
+      model: "claude-3-5-sonnet-20240620",
+      maxTokens: 1200,
+      userTextPreview:
+        userText?.substring(0, 200) + (userText?.length > 200 ? "..." : ""),
+    });
+
     const msg = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20240620",
       max_tokens: 1200,
@@ -167,11 +220,35 @@ async function extractIntakeFromText(userText) {
       ],
     });
 
-    console.log("Anthropic API response received");
+    console.log(`📥 [${requestId}] Anthropic API response received:`, {
+      id: msg.id,
+      type: msg.type,
+      role: msg.role,
+      contentLength: msg.content?.[0]?.text?.length || 0,
+      usage: msg.usage,
+    });
+
     const txt = msg?.content?.[0]?.text || "{}";
-    return safeParse(IntakeSchema, JSON.parse(txt));
+    console.log(`🔍 [${requestId}] Raw response text:`, txt);
+
+    const parsed = JSON.parse(txt);
+    const validated = safeParse(IntakeSchema, parsed);
+
+    console.log(
+      `✅ [${requestId}] Successfully extracted and validated intake:`,
+      validated
+    );
+    return validated;
   } catch (error) {
-    console.error("Anthropic API error:", error);
+    console.error(`💥 [${requestId}] Anthropic API error:`, {
+      message: error?.message,
+      name: error?.name,
+      stack: error?.stack,
+      code: error?.code,
+      status: error?.status,
+      timestamp: new Date().toISOString(),
+    });
+
     // Return empty object if API fails
     return {};
   }
@@ -342,9 +419,25 @@ function safeParse(schema, value) {
   return schema.parse(JSON.parse(JSON.stringify(value || {})));
 }
 
-function processIntake(partialIntake, extracted, sessionId, res) {
+function processIntake(partialIntake, extracted, sessionId, res, requestId) {
+  console.log(`🔄 [${requestId}] Processing intake:`, {
+    partialIntake,
+    extracted,
+    sessionId,
+  });
+
   const merged = normalizeIntake(deepMergeIntake(partialIntake, extracted));
   const missing = findMissing(merged);
+
+  console.log(`📊 [${requestId}] Intake analysis:`, {
+    merged,
+    missing,
+    hasDestinations: !!merged.destinations?.length,
+    hasDates: !!(merged.dates?.start && merged.dates?.end),
+    hasParty: !!merged.party?.adults,
+    hasBudget: !!(merged.budget?.level || merged.budget?.per_person_daily_usd),
+    hasVibe: !!merged.vibe?.pace,
+  });
 
   let extraFollowUp = null;
   if (
@@ -358,14 +451,22 @@ function processIntake(partialIntake, extracted, sessionId, res) {
         "Do you want to split days across cities or should I spread them evenly",
       chips: ["Even split", "Rome 3 Florence 2 Venice 3", "I will specify"],
     };
+    console.log(`📍 [${requestId}] Extra follow-up needed for day splitting`);
   }
 
   if (!missing.length && !extraFollowUp) {
+    console.log(`✅ [${requestId}] Intake complete, ready for trip generation`);
     res.status(200).json({ status: "ready", sessionId, intake: merged });
     return;
   }
 
   const followUp = extraFollowUp || buildFollowUp(missing[0], merged);
+  console.log(`❓ [${requestId}] Need follow-up:`, {
+    question: followUp.question,
+    chips: followUp.chips,
+    missingField: missing[0],
+  });
+
   res.status(200).json({
     status: "need_follow_up",
     sessionId,

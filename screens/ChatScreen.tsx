@@ -124,6 +124,14 @@ export default function ChatScreen({ navigation, route }: ChatScreenProps) {
       // Remove loading message
       setMessages((prev) => prev.filter((msg) => !msg.isLoading));
 
+      console.error("💥 ChatScreen Error:", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        userText,
+        sessionId: api.getSessionId(),
+        timestamp: new Date().toISOString(),
+      });
+
       const errorMessage: Message = {
         id: (Date.now() + 2).toString(),
         text: "Sorry, I encountered an issue. Could you try again?",

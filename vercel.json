@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/userQuery.js": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "ANTHROPIC_API_KEY": "ANTHROPIC_API_KEY"
+  }
+}
