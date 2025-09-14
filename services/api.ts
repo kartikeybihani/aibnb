@@ -86,6 +86,83 @@ export class TravelIntakeAPI {
     }
   }
 
+  async composeItinerary(intake: any, options: any, swipes: any): Promise<any> {
+    const request = {
+      intake,
+      options,
+      swipes,
+    };
+
+    const url = `${API_BASE_URL}/api/composeItinerary`;
+    
+    console.log('🎯 ComposeItinerary API Request:', {
+      url,
+      method: 'POST',
+      sessionId: this.sessionId,
+      intake: intake?.destinations?.map((d: any) => d.city),
+      optionsCount: {
+        restaurants: options?.restaurants?.length || 0,
+        activities: options?.activities?.length || 0,
+      },
+      swipes: {
+        liked: swipes?.liked?.length || 0,
+        disliked: swipes?.disliked?.length || 0,
+        totalSwiped: swipes?.totalSwiped || 0,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    try {
+      console.log('📡 Making composeItinerary request to:', url);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+
+      console.log('📥 ComposeItinerary response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        url: response.url,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ ComposeItinerary API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+        });
+        throw new Error(`ComposeItinerary API request failed: ${response.status} - ${response.statusText} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ ComposeItinerary Success Response:', {
+        status: data.status,
+        hasItinerary: !!data.itinerary,
+        itineraryTitle: data.itinerary?.title,
+        totalDays: data.itinerary?.totalDays,
+        sessionId: data.sessionId,
+      });
+      
+      return data;
+    } catch (error) {
+      console.error('💥 ComposeItinerary API Request Failed:', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        url,
+        sessionId: this.sessionId,
+        timestamp: new Date().toISOString(),
+      });
+      
+      throw error;
+    }
+  }
+
   getSessionId(): string {
     return this.sessionId;
   }

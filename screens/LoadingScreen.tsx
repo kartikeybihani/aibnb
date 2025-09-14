@@ -19,6 +19,7 @@ const colors = {
 
 interface LoadingScreenProps {
   navigation: any;
+  route: any;
 }
 
 const loadingMessages = [
@@ -34,18 +35,78 @@ const loadingMessages = [
   "Almost there, stay tuned...",
 ];
 
-export default function LoadingScreen({ navigation }: LoadingScreenProps) {
+export default function LoadingScreen({
+  navigation,
+  route,
+}: LoadingScreenProps) {
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
+  const [options, setOptions] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const dotAnim1 = useRef(new Animated.Value(0)).current;
   const dotAnim2 = useRef(new Animated.Value(0)).current;
   const dotAnim3 = useRef(new Animated.Value(0)).current;
 
+  // Get intake from route params
+  const { intake } = route.params || {};
+
+  // Fetch options from generateOptions API
+  const fetchOptions = async () => {
+    try {
+      console.log("🎯 Fetching options for intake:", intake);
+
+      const response = await fetch(
+        `${
+          process.env.EXPO_PUBLIC_API_URL || "http://hackermit.vercel.app/"
+        }/api/generateOptions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            intake,
+            counts: {
+              restaurants: 12,
+              activities: 18,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Options fetched:", data);
+      setOptions(data.options);
+      setIsLoading(false);
+    } catch (error) {
+      console.error("💥 Error fetching options:", error);
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Navigate to SwipeScreen after 5 seconds
+    // Fetch options first
+    if (intake) {
+      fetchOptions();
+    }
+
+    // Navigate to SwipeScreen after options are loaded or timeout
     const navigationTimer = setTimeout(() => {
-      navigation.navigate("SwipeScreen");
+      if (options || !isLoading) {
+        navigation.navigate("SwipeScreen", {
+          intake,
+          options: options || {
+            restaurants: [],
+            activities: [],
+            categories: [],
+          },
+        });
+      }
     }, 3500);
 
     const messageInterval = setInterval(() => {

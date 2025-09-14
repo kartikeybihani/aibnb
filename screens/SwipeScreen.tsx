@@ -23,6 +23,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { TravelIntakeAPI } from "../services/api";
 
 // Color tokens (same as LoadingScreen)
 const colors = {
@@ -121,10 +122,24 @@ const restaurants = [
 
 interface SwipeScreenProps {
   navigation: any;
+  route: any;
 }
 
-export default function SwipeScreen({ navigation }: SwipeScreenProps) {
+export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
   const [currentRestaurantIndex, setCurrentRestaurantIndex] = React.useState(0);
+
+  // Get intake and options from route params
+  const { intake, options } = route.params || {};
+
+  // Swipe tracking state
+  const [swipeData, setSwipeData] = React.useState({
+    liked: [] as string[],
+    disliked: [] as string[],
+    totalSwiped: 0,
+  });
+
+  // API instance
+  const [api] = React.useState(() => new TravelIntakeAPI());
 
   // Card transforms
   const translateX = useSharedValue(0);
@@ -163,7 +178,36 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
     runOnJS(setIsOverlayExpanded)(expanded);
   });
 
-  const currentRestaurant = restaurants[currentRestaurantIndex];
+  // Use options data if available, otherwise fallback to hardcoded restaurants
+  const availableOptions = options?.restaurants || restaurants;
+  const currentRestaurant = availableOptions[currentRestaurantIndex];
+
+  // API call to compose itinerary
+  const composeItinerary = async () => {
+    try {
+      console.log("🎯 Calling composeItinerary with:", {
+        intake,
+        options,
+        swipes: swipeData,
+      });
+
+      const data = await api.composeItinerary(intake, options, swipeData);
+      console.log("✅ Itinerary composed:", data);
+
+      // Navigate to itinerary screen with the composed itinerary
+      navigation.navigate("Itinerary", {
+        itinerary: data.itinerary,
+        meta: data.meta,
+      });
+    } catch (error) {
+      console.error("💥 Error composing itinerary:", error);
+      // Fallback navigation
+      navigation.navigate("Itinerary", {
+        itinerary: null,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
 
   const showAlert = (direction: string) => {
     Alert.alert("Swipe Action", `You swiped ${direction}!`, [
@@ -188,15 +232,34 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
     newCardTranslateY.value = -screenHeight; // park above
   };
 
-  const nextRestaurant = () => {
-    const nextIndex = (currentRestaurantIndex + 1) % restaurants.length;
+  const nextRestaurant = (swipeDirection: "like" | "dislike") => {
+    const currentRestaurantId =
+      availableOptions[currentRestaurantIndex].id.toString();
+
+    // Update swipe data
+    setSwipeData((prev) => ({
+      liked:
+        swipeDirection === "like"
+          ? [...prev.liked, currentRestaurantId]
+          : prev.liked,
+      disliked:
+        swipeDirection === "dislike"
+          ? [...prev.disliked, currentRestaurantId]
+          : prev.disliked,
+      totalSwiped: prev.totalSwiped + 1,
+    }));
+
+    const nextIndex = (currentRestaurantIndex + 1) % availableOptions.length;
     setCurrentRestaurantIndex(nextIndex);
 
     // Check if we've completed all restaurants (cycled back to 0)
-    if (nextIndex === 0 && currentRestaurantIndex === restaurants.length - 1) {
-      // All restaurants exhausted, navigate to loading screen
+    if (
+      nextIndex === 0 &&
+      currentRestaurantIndex === availableOptions.length - 1
+    ) {
+      // All restaurants exhausted, compose itinerary
       setTimeout(() => {
-        navigation.navigate("ItineraryLoading");
+        composeItinerary();
       }, 1000); // Small delay to let the animation complete
     }
 
@@ -284,7 +347,7 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
           nextCardRotate.value = withSpring(0, { damping: 20, stiffness: 360 });
         }, 120);
 
-        runOnJS(nextRestaurant)();
+        runOnJS(nextRestaurant)("like");
         setTimeout(() => runOnJS(resetCard)(), 780);
       }
       // LEFT SWIPE
@@ -321,7 +384,7 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
           nextCardRotate.value = withSpring(0, { damping: 20, stiffness: 360 });
         }, 120);
 
-        runOnJS(nextRestaurant)();
+        runOnJS(nextRestaurant)("dislike");
         setTimeout(() => runOnJS(resetCard)(), 780);
       }
       // UP SWIPE -> keep as-is (alert), but don’t interfere with overlay pan
@@ -425,7 +488,7 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
     ] as any,
   }));
 
-  const nextIndex = (currentRestaurantIndex + 1) % restaurants.length;
+  const nextIndex = (currentRestaurantIndex + 1) % availableOptions.length;
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -479,7 +542,10 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
             ]}
           >
             <Image
-              source={restaurants[nextIndex].image}
+              source={
+                availableOptions[nextIndex]?.image ||
+                restaurants[nextIndex]?.image
+              }
               style={styles.cardImage}
               resizeMode="cover"
             />
@@ -489,12 +555,14 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
               <View style={styles.detailsContent}>
                 <View style={styles.restaurantHeader}>
                   <Text style={styles.restaurantName}>
-                    {restaurants[nextIndex].name}
+                    {availableOptions[nextIndex]?.name ||
+                      restaurants[nextIndex]?.name}
                   </Text>
                   <View style={styles.ratingContainer}>
                     <Ionicons name="star" size={16} color="#FFD700" />
                     <Text style={styles.rating}>
-                      {restaurants[nextIndex].rating}
+                      {availableOptions[nextIndex]?.rating ||
+                        restaurants[nextIndex]?.rating}
                     </Text>
                   </View>
                 </View>
@@ -506,7 +574,10 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
           <GestureDetector gesture={panGesture}>
             <Animated.View style={[styles.card, animatedStyle, skewStyle]}>
               <Image
-                source={currentRestaurant.image}
+                source={
+                  currentRestaurant?.image ||
+                  restaurants[currentRestaurantIndex]?.image
+                }
                 style={styles.cardImage}
                 resizeMode="cover"
               />
@@ -565,18 +636,21 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
                   >
                     <View style={styles.restaurantHeader}>
                       <Text style={styles.restaurantName}>
-                        {currentRestaurant.name}
+                        {currentRestaurant?.name ||
+                          restaurants[currentRestaurantIndex]?.name}
                       </Text>
                       <View style={styles.ratingContainer}>
                         <Ionicons name="star" size={16} color="#FFD700" />
                         <Text style={styles.rating}>
-                          {currentRestaurant.rating}
+                          {currentRestaurant?.rating ||
+                            restaurants[currentRestaurantIndex]?.rating}
                         </Text>
                       </View>
                     </View>
 
                     <Text style={styles.restaurantDescription}>
-                      {currentRestaurant.description}
+                      {currentRestaurant?.description ||
+                        restaurants[currentRestaurantIndex]?.description}
                     </Text>
 
                     <View style={styles.detailsSection}>
@@ -587,7 +661,8 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
                           color={colors.subtext}
                         />
                         <Text style={styles.detailText}>
-                          {currentRestaurant.phone}
+                          {currentRestaurant?.phone ||
+                            restaurants[currentRestaurantIndex]?.phone}
                         </Text>
                       </View>
 
@@ -598,7 +673,8 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
                           color={colors.subtext}
                         />
                         <Text style={styles.detailText}>
-                          {currentRestaurant.address}
+                          {currentRestaurant?.address ||
+                            restaurants[currentRestaurantIndex]?.address}
                         </Text>
                       </View>
 
@@ -609,7 +685,8 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
                           color={colors.subtext}
                         />
                         <Text style={styles.detailText}>
-                          {currentRestaurant.hours}
+                          {currentRestaurant?.hours ||
+                            restaurants[currentRestaurantIndex]?.hours}
                         </Text>
                       </View>
 
@@ -620,7 +697,8 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
                           color={colors.subtext}
                         />
                         <Text style={styles.detailText}>
-                          {currentRestaurant.cuisine}
+                          {currentRestaurant?.cuisine ||
+                            restaurants[currentRestaurantIndex]?.cuisine}
                         </Text>
                       </View>
                     </View>
@@ -628,7 +706,11 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
                     <View style={styles.featuresSection}>
                       <Text style={styles.sectionTitle}>Features</Text>
                       <View style={styles.featuresGrid}>
-                        {currentRestaurant.features.map((feature, index) => (
+                        {(
+                          currentRestaurant?.features ||
+                          restaurants[currentRestaurantIndex]?.features ||
+                          []
+                        ).map((feature, index) => (
                           <View key={index} style={styles.featureTag}>
                             <Text style={styles.featureText}>{feature}</Text>
                           </View>

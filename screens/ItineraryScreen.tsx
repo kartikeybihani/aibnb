@@ -37,6 +37,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 interface ItineraryScreenProps {
   navigation: any;
+  route: any;
 }
 
 // Sample 5-day Italy itinerary data
@@ -373,9 +374,29 @@ const itinerary = [
   },
 ];
 
-export default function ItineraryScreen({ navigation }: ItineraryScreenProps) {
+export default function ItineraryScreen({
+  navigation,
+  route,
+}: ItineraryScreenProps) {
   const fadeInValue = useSharedValue(0);
   const slideUpValue = useSharedValue(30);
+
+  // Get itinerary data from route params
+  const { itinerary: dynamicItinerary, meta, error } = route.params || {};
+
+  // Use dynamic itinerary if available, otherwise fallback to hardcoded data
+  const itineraryData = dynamicItinerary || {
+    title: "Your Amazing Trip",
+    summary: "A carefully crafted itinerary based on your preferences",
+    totalDays: 5,
+    cities: ["Milan", "Venice", "Florence"],
+    days: itinerary, // Use hardcoded data as fallback
+    estimatedCost: {
+      total: 1500,
+      perPerson: 750,
+      currency: "USD",
+    },
+  };
 
   useEffect(() => {
     fadeInValue.value = withTiming(1, { duration: 800 });
@@ -407,6 +428,22 @@ export default function ItineraryScreen({ navigation }: ItineraryScreenProps) {
       transform: [{ translateY: cardSlide.value }],
     }));
 
+    // Map activity type to icon
+    const getActivityIcon = (type: string) => {
+      switch (type) {
+        case "restaurant":
+          return "restaurant";
+        case "activity":
+          return "walk";
+        case "transport":
+          return "train";
+        case "accommodation":
+          return "bed";
+        default:
+          return "location";
+      }
+    };
+
     return (
       <Animated.View key={index} style={[styles.activityCard, cardStyle]}>
         <View style={styles.activityHeader}>
@@ -415,21 +452,39 @@ export default function ItineraryScreen({ navigation }: ItineraryScreenProps) {
           </View>
           <View style={styles.iconContainer}>
             <Ionicons
-              name={activity.icon as any}
+              name={getActivityIcon(activity.type) as any}
               size={24}
               color={colors.accent}
             />
           </View>
         </View>
         <Text style={styles.activityTitle}>{activity.title}</Text>
-        <Text style={styles.activityDescription}>{activity.description}</Text>
+        <Text style={styles.activityDescription}>
+          {activity.description || activity.notes || "Activity details"}
+        </Text>
         <View style={styles.detailsContainer}>
-          {activity.details.map((detail: string, detailIndex: number) => (
-            <View key={detailIndex} style={styles.detailItem}>
+          {activity.location && (
+            <View style={styles.detailItem}>
               <View style={styles.bulletPoint} />
-              <Text style={styles.detailText}>{detail}</Text>
+              <Text style={styles.detailText}>
+                Location: {activity.location}
+              </Text>
             </View>
-          ))}
+          )}
+          {activity.duration && (
+            <View style={styles.detailItem}>
+              <View style={styles.bulletPoint} />
+              <Text style={styles.detailText}>
+                Duration: {activity.duration}
+              </Text>
+            </View>
+          )}
+          {activity.notes && activity.notes !== activity.description && (
+            <View style={styles.detailItem}>
+              <View style={styles.bulletPoint} />
+              <Text style={styles.detailText}>{activity.notes}</Text>
+            </View>
+          )}
         </View>
       </Animated.View>
     );
@@ -465,8 +520,12 @@ export default function ItineraryScreen({ navigation }: ItineraryScreenProps) {
                 <Text style={styles.dayNumber}>{dayData.day}</Text>
               </View>
               <View style={styles.dayInfo}>
-                <Text style={styles.dayDate}>{dayData.date}</Text>
-                <Text style={styles.dayTitle}>{dayData.title}</Text>
+                <Text style={styles.dayDate}>
+                  {dayData.date || `Day ${dayData.day}`}
+                </Text>
+                <Text style={styles.dayTitle}>
+                  {dayData.title || `Day ${dayData.day} in ${dayData.city}`}
+                </Text>
                 <Text style={styles.cityName}>{dayData.city}</Text>
               </View>
             </View>
@@ -482,19 +541,21 @@ export default function ItineraryScreen({ navigation }: ItineraryScreenProps) {
           </View>
           <View style={styles.dayStats}>
             <View style={styles.statItem}>
-              <Ionicons name="bed" size={16} color={colors.accent} />
-              <Text style={styles.statText}>{dayData.accommodation}</Text>
+              <Ionicons name="location" size={16} color={colors.accent} />
+              <Text style={styles.statText}>{dayData.city}</Text>
             </View>
             <View style={styles.statItem}>
-              <Ionicons name="train" size={16} color={colors.accent} />
-              <Text style={styles.statText}>{dayData.transport}</Text>
+              <Ionicons name="time" size={16} color={colors.accent} />
+              <Text style={styles.statText}>
+                {dayData.activities?.length || 0} activities
+              </Text>
             </View>
           </View>
         </View>
 
         {/* Activities */}
         <View style={styles.activitiesContainer}>
-          {dayData.activities.map((activity: any, activityIndex: number) =>
+          {dayData.activities?.map((activity: any, activityIndex: number) =>
             renderActivityCard(activity, activityIndex)
           )}
         </View>
@@ -513,9 +574,10 @@ export default function ItineraryScreen({ navigation }: ItineraryScreenProps) {
           <Ionicons name="arrow-back" size={24} color={colors.accent} />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Your Italy Itinerary</Text>
+          <Text style={styles.headerTitle}>{itineraryData.title}</Text>
           <Text style={styles.headerSubtitle}>
-            5 Days • 3 Cities • Unforgettable
+            {itineraryData.totalDays} Days • {itineraryData.cities?.length || 0}{" "}
+            Cities • Unforgettable
           </Text>
         </View>
         <TouchableOpacity style={styles.shareButton}>
@@ -530,14 +592,23 @@ export default function ItineraryScreen({ navigation }: ItineraryScreenProps) {
         contentContainerStyle={styles.scrollContent}
       >
         <Animated.View style={fadeInStyle}>
-          <Text style={styles.introText}>
-            Your personalized 5-day Italian adventure awaits! From Milan's
-            fashion district to Venice's romantic canals and Florence's
-            Renaissance treasures.
-          </Text>
+          <Text style={styles.introText}>{itineraryData.summary}</Text>
         </Animated.View>
 
-        {itinerary.map((dayData, index) => renderDayCard(dayData, index))}
+        {error && (
+          <Animated.View style={[styles.errorCard, fadeInStyle]}>
+            <Text style={styles.errorText}>
+              There was an issue generating your itinerary: {error}
+            </Text>
+            <Text style={styles.errorSubtext}>
+              Here's a sample itinerary to get you started!
+            </Text>
+          </Animated.View>
+        )}
+
+        {itineraryData.days?.map((dayData, index) =>
+          renderDayCard(dayData, index)
+        )}
 
         {/* Summary Card */}
         <Animated.View style={[styles.summaryCard, fadeInStyle]}>
@@ -546,17 +617,24 @@ export default function ItineraryScreen({ navigation }: ItineraryScreenProps) {
             <View style={styles.summaryItem}>
               <Ionicons name="calendar" size={20} color={colors.accent} />
               <Text style={styles.summaryLabel}>Duration</Text>
-              <Text style={styles.summaryValue}>5 Days</Text>
+              <Text style={styles.summaryValue}>
+                {itineraryData.totalDays} Days
+              </Text>
             </View>
             <View style={styles.summaryItem}>
               <Ionicons name="location" size={20} color={colors.accent} />
               <Text style={styles.summaryLabel}>Cities</Text>
-              <Text style={styles.summaryValue}>3 Cities</Text>
+              <Text style={styles.summaryValue}>
+                {itineraryData.cities?.length || 0} Cities
+              </Text>
             </View>
             <View style={styles.summaryItem}>
-              <Ionicons name="train" size={20} color={colors.accent} />
-              <Text style={styles.summaryLabel}>Transport</Text>
-              <Text style={styles.summaryValue}>Train + Vaporetto</Text>
+              <Ionicons name="card" size={20} color={colors.accent} />
+              <Text style={styles.summaryLabel}>Est. Cost</Text>
+              <Text style={styles.summaryValue}>
+                {itineraryData.estimatedCost?.currency || "USD"}{" "}
+                {itineraryData.estimatedCost?.perPerson || 0}
+              </Text>
             </View>
             <View style={styles.summaryItem}>
               <Ionicons name="star" size={20} color={colors.accent} />
@@ -832,5 +910,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+  errorCard: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  errorText: {
+    fontSize: 14,
+    color: colors.accent,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 12,
+    color: colors.subtext,
+    textAlign: "center",
   },
 });
