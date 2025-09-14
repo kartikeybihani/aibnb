@@ -3,6 +3,7 @@
     "name": "hacker",
     "slug": "hacker",
     "version": "1.0.0",
+    "main": "index.tsx",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hacker",
@@ -26,7 +27,6 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router",
       [
         "expo-splash-screen",
         {
@@ -41,7 +41,6 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
       "reactCompiler": true
     }
   }
