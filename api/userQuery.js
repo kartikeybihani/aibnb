@@ -194,14 +194,14 @@ async function extractIntakeFromText(userText) {
     };
 
     console.log(`📤 [${requestId}] Sending request to Anthropic...`, {
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-haiku-20241022",
       maxTokens: 1200,
       userTextPreview:
         userText?.substring(0, 200) + (userText?.length > 200 ? "..." : ""),
     });
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 1200,
       system,
       response_format: { type: "json_schema", json_schema: jsonSchema },
