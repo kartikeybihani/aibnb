@@ -130,10 +130,23 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const rotate = useSharedValue(0);
+  const scale = useSharedValue(1);
   const cardHeight = useSharedValue(CARD_HEIGHT);
 
   // "Next" card starts above the screen; we drop it in from the top.
   const newCardTranslateY = useSharedValue(-screenHeight);
+
+  // effects for like/nope and backdrop flash
+  const likeOpacity = useSharedValue(0);
+  const nopeOpacity = useSharedValue(0);
+  const flashOpacity = useSharedValue(0);
+
+  // next card polish
+  const nextCardScale = useSharedValue(0.96);
+  const nextCardRotate = useSharedValue(0);
+
+  // left-swipe dust trail skew
+  const skewDeg = useSharedValue(0);
 
   // Bottom sheet overlay height (no more tying this to ScrollView scroll)
   const overlayHeight = useSharedValue(OVERLAY_COLLAPSED);
@@ -162,13 +175,31 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
     translateX.value = withSpring(0);
     translateY.value = withSpring(0);
     rotate.value = withSpring(0);
+    scale.value = withSpring(1);
     cardHeight.value = withSpring(CARD_HEIGHT);
-    // keep overlay where the user left it (no forced collapse)
-    newCardTranslateY.value = -screenHeight; // park above for next reveal
+
+    likeOpacity.value = 0;
+    nopeOpacity.value = 0;
+    flashOpacity.value = 0;
+    nextCardScale.value = 0.96;
+    nextCardRotate.value = 0;
+    skewDeg.value = 0;
+
+    newCardTranslateY.value = -screenHeight; // park above
   };
 
   const nextRestaurant = () => {
-    setCurrentRestaurantIndex((prev) => (prev + 1) % restaurants.length);
+    const nextIndex = (currentRestaurantIndex + 1) % restaurants.length;
+    setCurrentRestaurantIndex(nextIndex);
+
+    // Check if we've completed all restaurants (cycled back to 0)
+    if (nextIndex === 0 && currentRestaurantIndex === restaurants.length - 1) {
+      // All restaurants exhausted, navigate to loading screen
+      setTimeout(() => {
+        navigation.navigate("ItineraryLoading");
+      }, 1000); // Small delay to let the animation complete
+    }
+
     // Prepare the next "next" card off-screen above
     newCardTranslateY.value = -screenHeight;
   };
@@ -194,42 +225,104 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
       translateX.value = event.translationX;
       translateY.value = event.translationY;
       rotate.value = (event.translationX / CARD_WIDTH) * 20;
+      // Add subtle scale effect during drag
+      const dragProgress = Math.abs(event.translationX) / CARD_WIDTH;
+      scale.value = 1 - dragProgress * 0.05; // Slight shrink as you drag
+
+      // badge opacity follows horizontal drag
+      const p = Math.min(1, Math.abs(event.translationX) / (CARD_WIDTH * 0.5));
+      likeOpacity.value = event.translationX > 0 ? p : 0;
+      nopeOpacity.value = event.translationX < 0 ? p : 0;
+
+      // tease the next card slightly
+      nextCardScale.value =
+        0.96 +
+        Math.min(0.03, (Math.abs(event.translationX) / CARD_WIDTH) * 0.04);
+      nextCardRotate.value = (event.translationX / CARD_WIDTH) * 2; // tiny tilt
     })
     .onEnd((event) => {
       const { translationX, translationY, velocityX, velocityY } = event;
 
-      // RIGHT SWIPE -> fling current off to RIGHT, bring NEXT from TOP
+      // RIGHT SWIPE
       if (translationX > 100 || velocityX > 500) {
-        translateX.value = withSpring(screenWidth + 160, {
-          damping: 15,
-          stiffness: 220,
-        });
-        rotate.value = withSpring(18, { damping: 15, stiffness: 220 });
-
-        // drop the prepared "next" card from the top
-        newCardTranslateY.value = withSpring(0, {
+        translateX.value = withSpring(screenWidth + 200, {
           damping: 18,
-          stiffness: 300,
+          stiffness: 320,
         });
+        rotate.value = withSpring(25, { damping: 18, stiffness: 320 });
+        scale.value = withSpring(0.88, { damping: 18, stiffness: 320 });
+        skewDeg.value = withSpring(0);
+
+        likeOpacity.value = withSpring(1); // snap badge fully visible
+
+        // flash the backdrop quickly
+        flashOpacity.value = 0;
+        flashOpacity.value = withSpring(
+          0.4,
+          { damping: 18, stiffness: 300 },
+          () => {
+            flashOpacity.value = withSpring(0, { damping: 20, stiffness: 280 });
+          }
+        );
+
+        // bring next card with bounce + slight overshoot scale
+        setTimeout(() => {
+          newCardTranslateY.value = withSpring(0, {
+            damping: 24,
+            stiffness: 420,
+          });
+          nextCardScale.value = withSpring(
+            1.02,
+            { damping: 22, stiffness: 380 },
+            () => {
+              nextCardScale.value = withSpring(1, {
+                damping: 22,
+                stiffness: 380,
+              });
+            }
+          );
+          nextCardRotate.value = withSpring(0, { damping: 20, stiffness: 360 });
+        }, 120);
 
         runOnJS(nextRestaurant)();
-        setTimeout(() => runOnJS(resetCard)(), 600);
+        setTimeout(() => runOnJS(resetCard)(), 780);
       }
-      // LEFT SWIPE -> fling current off to LEFT, bring NEXT from TOP (same behavior)
+      // LEFT SWIPE
       else if (translationX < -100 || velocityX < -500) {
-        translateX.value = withSpring(-screenWidth - 160, {
-          damping: 15,
-          stiffness: 220,
-        });
-        rotate.value = withSpring(-18, { damping: 15, stiffness: 220 });
-
-        newCardTranslateY.value = withSpring(0, {
+        translateX.value = withSpring(-screenWidth - 200, {
           damping: 18,
-          stiffness: 300,
+          stiffness: 320,
         });
+        rotate.value = withSpring(-22, { damping: 18, stiffness: 320 });
+        scale.value = withSpring(0.9, { damping: 18, stiffness: 320 });
+
+        // dust trail skew as it leaves
+        skewDeg.value = withSpring(-6, { damping: 18, stiffness: 320 });
+
+        // show NOPE badge
+        nopeOpacity.value = withSpring(1);
+
+        // bring next card similarly
+        setTimeout(() => {
+          newCardTranslateY.value = withSpring(0, {
+            damping: 24,
+            stiffness: 420,
+          });
+          nextCardScale.value = withSpring(
+            1.01,
+            { damping: 22, stiffness: 380 },
+            () => {
+              nextCardScale.value = withSpring(1, {
+                damping: 22,
+                stiffness: 380,
+              });
+            }
+          );
+          nextCardRotate.value = withSpring(0, { damping: 20, stiffness: 360 });
+        }, 120);
 
         runOnJS(nextRestaurant)();
-        setTimeout(() => runOnJS(resetCard)(), 600);
+        setTimeout(() => runOnJS(resetCard)(), 780);
       }
       // UP SWIPE -> keep as-is (alert), but don’t interfere with overlay pan
       else if (translationY < -100 || velocityY < -500) {
@@ -242,6 +335,12 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
         translateX.value = withSpring(0);
         translateY.value = withSpring(0);
         rotate.value = withSpring(0);
+        scale.value = withSpring(1);
+        likeOpacity.value = withSpring(0);
+        nopeOpacity.value = withSpring(0);
+        nextCardScale.value = withSpring(0.96);
+        nextCardRotate.value = withSpring(0);
+        skewDeg.value = withSpring(0);
       }
     });
 
@@ -276,6 +375,7 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
         { translateX: translateX.value },
         { translateY: translateY.value },
         { rotate: `${rotate.value}deg` },
+        { scale: scale.value },
       ] as any,
       height: cardHeight.value,
     };
@@ -288,6 +388,42 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
   const newCardAnimatedStyle = useAnimatedStyle(() => {
     return { transform: [{ translateY: newCardTranslateY.value }] as any };
   });
+
+  // labels
+  const likeStyle = useAnimatedStyle(() => ({
+    opacity: likeOpacity.value,
+    transform: [{ rotate: "-12deg" }],
+  }));
+
+  const nopeStyle = useAnimatedStyle(() => ({
+    opacity: nopeOpacity.value,
+    transform: [{ rotate: "12deg" }],
+  }));
+
+  // backdrop flash for right-swipe success
+  const flashStyle = useAnimatedStyle(() => ({
+    opacity: flashOpacity.value,
+  }));
+
+  // skew effect for left exit
+  const skewStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { rotate: `${rotate.value}deg` },
+      { scale: scale.value },
+      // Reanimated v3 doesn't have direct skew helpers; use matrix via rotateZ small for hint
+    ] as any,
+  }));
+
+  // polish for the 'next' card
+  const newCardPolishStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: newCardTranslateY.value },
+      { scale: nextCardScale.value },
+      { rotate: `${nextCardRotate.value}deg` },
+    ] as any,
+  }));
 
   const nextIndex = (currentRestaurantIndex + 1) % restaurants.length;
 
@@ -325,11 +461,22 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
           </View>
         </View>
 
+        {/* Success flash layer */}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.flash, flashStyle]}
+        />
+
         {/* Main Content */}
         <View style={styles.content}>
           {/* New Card (appears from top) */}
           <Animated.View
-            style={[styles.card, styles.newCard, newCardAnimatedStyle]}
+            style={[
+              styles.card,
+              styles.newCard,
+              newCardAnimatedStyle,
+              newCardPolishStyle,
+            ]}
           >
             <Image
               source={restaurants[nextIndex].image}
@@ -357,12 +504,29 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
 
           {/* Current Card */}
           <GestureDetector gesture={panGesture}>
-            <Animated.View style={[styles.card, animatedStyle]}>
+            <Animated.View style={[styles.card, animatedStyle, skewStyle]}>
               <Image
                 source={currentRestaurant.image}
                 style={styles.cardImage}
                 resizeMode="cover"
               />
+
+              {/* LIKE / NOPE badges */}
+              <View style={styles.badgeContainer}>
+                <Animated.View
+                  style={[styles.badge, styles.likeBadge, likeStyle]}
+                >
+                  <Ionicons name="checkmark" size={32} color="#FFFFFF" />
+                  <Text style={styles.badgeTextLike}>LIKE</Text>
+                </Animated.View>
+
+                <Animated.View
+                  style={[styles.badge, styles.nopeBadge, nopeStyle]}
+                >
+                  <Ionicons name="close" size={32} color="#FFFFFF" />
+                  <Text style={styles.badgeTextNope}>NOPE</Text>
+                </Animated.View>
+              </View>
 
               {/* Overlay bottom-sheet with its own vertical pan */}
               <GestureDetector gesture={overlayPan}>
@@ -664,5 +828,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     color: colors.accent,
+  },
+  flash: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "#D1FAE5", // soft green flash
+    zIndex: 2,
+  },
+  badgeContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 3,
+    pointerEvents: "none",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  badge: {
+    position: "absolute",
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  likeBadge: {
+    backgroundColor: "#10B981", // vibrant green
+    borderColor: "#FFFFFF",
+  },
+  nopeBadge: {
+    backgroundColor: "#EF4444", // vibrant red
+    borderColor: "#FFFFFF",
+  },
+  badgeTextLike: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+    letterSpacing: 2,
+    fontSize: 18,
+  },
+  badgeTextNope: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+    letterSpacing: 2,
+    fontSize: 18,
   },
 });

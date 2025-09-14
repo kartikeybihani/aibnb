@@ -2,6 +2,8 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import React from "react";
 import ChatScreen from "./screens/ChatScreen";
+import ItineraryLoadingScreen from "./screens/ItineraryLoadingScreen";
+import ItineraryScreen from "./screens/ItineraryScreen";
 import LoadingScreen from "./screens/LoadingScreen";
 import SwipeScreen from "./screens/SwipeScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
@@ -61,6 +63,22 @@ export default function App() {
           component={SwipeScreen}
           options={{
             title: "SwipeScreen",
+            gestureDirection: "horizontal",
+          }}
+        />
+        <Stack.Screen
+          name="ItineraryLoading"
+          component={ItineraryLoadingScreen}
+          options={{
+            title: "ItineraryLoading",
+            gestureDirection: "horizontal",
+          }}
+        />
+        <Stack.Screen
+          name="Itinerary"
+          component={ItineraryScreen}
+          options={{
+            title: "Itinerary",
             gestureDirection: "horizontal",
           }}
         />
