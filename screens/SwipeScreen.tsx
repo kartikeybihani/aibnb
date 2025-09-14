@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import {
@@ -15,12 +16,13 @@ import {
   GestureHandlerRootView,
 } from "react-native-gesture-handler";
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { runOnJS } from "react-native-worklets";
 
 // Color tokens (same as LoadingScreen)
 const colors = {
@@ -40,7 +42,10 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 const CARD_WIDTH = screenWidth - 40;
 const CARD_HEIGHT = screenHeight * 0.75;
 
-// Restaurant data
+// Overlay snap points
+const OVERLAY_COLLAPSED = CARD_HEIGHT * 0.2;
+const OVERLAY_EXPANDED = Math.min(screenHeight * 0.7, CARD_HEIGHT);
+
 const restaurants = [
   {
     id: 1,
@@ -120,12 +125,30 @@ interface SwipeScreenProps {
 
 export default function SwipeScreen({ navigation }: SwipeScreenProps) {
   const [currentRestaurantIndex, setCurrentRestaurantIndex] = React.useState(0);
-  const [isExpanded, setIsExpanded] = React.useState(false);
+
+  // Card transforms
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const rotate = useSharedValue(0);
   const cardHeight = useSharedValue(CARD_HEIGHT);
-  const overlayHeight = useSharedValue(CARD_HEIGHT * 0.2);
+
+  // "Next" card starts above the screen; we drop it in from the top.
+  const newCardTranslateY = useSharedValue(-screenHeight);
+
+  // Bottom sheet overlay height (no more tying this to ScrollView scroll)
+  const overlayHeight = useSharedValue(OVERLAY_COLLAPSED);
+  const overlayDragStart = useSharedValue(OVERLAY_COLLAPSED);
+
+  // We only enable inner content scrolling when expanded to avoid bounce
+  const [scrollEnabled, setScrollEnabled] = React.useState(false);
+  const [isOverlayExpanded, setIsOverlayExpanded] = React.useState(false);
+  useDerivedValue(() => {
+    const expanded =
+      overlayHeight.value >= (OVERLAY_COLLAPSED + OVERLAY_EXPANDED) / 2;
+    // move to JS only when the boolean actually changes
+    runOnJS(setScrollEnabled)(expanded);
+    runOnJS(setIsOverlayExpanded)(expanded);
+  });
 
   const currentRestaurant = restaurants[currentRestaurantIndex];
 
@@ -140,42 +163,33 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
     translateY.value = withSpring(0);
     rotate.value = withSpring(0);
     cardHeight.value = withSpring(CARD_HEIGHT);
-    overlayHeight.value = withSpring(CARD_HEIGHT * 0.2);
-    setIsExpanded(false);
+    // keep overlay where the user left it (no forced collapse)
+    newCardTranslateY.value = -screenHeight; // park above for next reveal
   };
 
   const nextRestaurant = () => {
     setCurrentRestaurantIndex((prev) => (prev + 1) % restaurants.length);
-    resetCard();
+    // Prepare the next "next" card off-screen above
+    newCardTranslateY.value = -screenHeight;
+  };
+
+  const collapseOverlay = () => {
+    overlayHeight.value = withSpring(OVERLAY_COLLAPSED, {
+      damping: 50,
+      stiffness: 500,
+    });
   };
 
   const prevRestaurant = () => {
     setCurrentRestaurantIndex(
       (prev) => (prev - 1 + restaurants.length) % restaurants.length
     );
-    resetCard();
+    newCardTranslateY.value = -screenHeight;
   };
 
-  const handleScroll = (event: any) => {
-    const { contentOffset } = event.nativeEvent;
-    const scrollY = contentOffset.y;
-
-    if (scrollY > 20 && !isExpanded) {
-      setIsExpanded(true);
-      overlayHeight.value = withSpring(screenHeight * 0.6, {
-        damping: 20,
-        stiffness: 300,
-      });
-    } else if (scrollY <= 20 && isExpanded) {
-      setIsExpanded(false);
-      overlayHeight.value = withSpring(CARD_HEIGHT * 0.2, {
-        damping: 20,
-        stiffness: 300,
-      });
-    }
-  };
-
+  // Horizontal pan to swipe the whole card stack
   const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10]) // ignore tiny jitters; also reduces conflict with vertical drags
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY;
@@ -184,25 +198,44 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
     .onEnd((event) => {
       const { translationX, translationY, velocityX, velocityY } = event;
 
-      // Check for right swipe
+      // RIGHT SWIPE -> fling current off to RIGHT, bring NEXT from TOP
       if (translationX > 100 || velocityX > 500) {
-        translateX.value = withSpring(screenWidth + 100);
-        rotate.value = withSpring(30);
-        runOnJS(prevRestaurant)();
-        setTimeout(() => runOnJS(resetCard)(), 1000);
-      }
-      // Check for left swipe
-      else if (translationX < -100 || velocityX < -500) {
-        translateX.value = withSpring(-screenWidth - 100);
-        rotate.value = withSpring(-30);
+        translateX.value = withSpring(screenWidth + 160, {
+          damping: 15,
+          stiffness: 220,
+        });
+        rotate.value = withSpring(18, { damping: 15, stiffness: 220 });
+
+        // drop the prepared "next" card from the top
+        newCardTranslateY.value = withSpring(0, {
+          damping: 18,
+          stiffness: 300,
+        });
+
         runOnJS(nextRestaurant)();
-        setTimeout(() => runOnJS(resetCard)(), 1000);
+        setTimeout(() => runOnJS(resetCard)(), 600);
       }
-      // Check for up swipe
+      // LEFT SWIPE -> fling current off to LEFT, bring NEXT from TOP (same behavior)
+      else if (translationX < -100 || velocityX < -500) {
+        translateX.value = withSpring(-screenWidth - 160, {
+          damping: 15,
+          stiffness: 220,
+        });
+        rotate.value = withSpring(-18, { damping: 15, stiffness: 220 });
+
+        newCardTranslateY.value = withSpring(0, {
+          damping: 18,
+          stiffness: 300,
+        });
+
+        runOnJS(nextRestaurant)();
+        setTimeout(() => runOnJS(resetCard)(), 600);
+      }
+      // UP SWIPE -> keep as-is (alert), but don’t interfere with overlay pan
       else if (translationY < -100 || velocityY < -500) {
         translateY.value = withSpring(-screenHeight - 100);
         runOnJS(showAlert)("up");
-        setTimeout(() => runOnJS(resetCard)(), 1000);
+        setTimeout(() => runOnJS(resetCard)(), 800);
       }
       // Return to center
       else {
@@ -210,6 +243,31 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
         translateY.value = withSpring(0);
         rotate.value = withSpring(0);
       }
+    });
+
+  // Vertical pan for the overlay bottom sheet (no bounce)
+  const overlayPan = Gesture.Pan()
+    .activeOffsetY([-6, 6])
+    .onStart(() => {
+      overlayDragStart.value = overlayHeight.value;
+    })
+    .onUpdate((e) => {
+      // dragging up should increase overlay height
+      const next = overlayDragStart.value - e.translationY;
+      const clamped = Math.max(
+        OVERLAY_COLLAPSED,
+        Math.min(OVERLAY_EXPANDED, next)
+      );
+      overlayHeight.value = clamped;
+    })
+    .onEnd((e) => {
+      const mid = (OVERLAY_COLLAPSED + OVERLAY_EXPANDED) / 2;
+      const shouldExpand = e.velocityY < -400 || overlayHeight.value > mid;
+
+      overlayHeight.value = withSpring(
+        shouldExpand ? OVERLAY_EXPANDED : OVERLAY_COLLAPSED,
+        { damping: 50, stiffness: 500 }
+      );
     });
 
   const animatedStyle = useAnimatedStyle(() => {
@@ -224,10 +282,14 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
   });
 
   const animatedOverlayStyle = useAnimatedStyle(() => {
-    return {
-      height: overlayHeight.value,
-    };
+    return { height: overlayHeight.value };
   });
+
+  const newCardAnimatedStyle = useAnimatedStyle(() => {
+    return { transform: [{ translateY: newCardTranslateY.value }] as any };
+  });
+
+  const nextIndex = (currentRestaurantIndex + 1) % restaurants.length;
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -236,15 +298,64 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
         <View style={styles.header}>
           <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
-              <Ionicons name="globe-outline" size={24} color={colors.accent} />
+              <Ionicons
+                name="globe-outline"
+                size={24}
+                color={colors.accent}
+                style={{ marginRight: 12 }}
+              />
               <Text style={styles.headerTitle}>AiBnB</Text>
             </View>
-            <Ionicons name="filter-outline" size={26} color={colors.text} />
+            <View style={styles.headerRight}>
+              <View style={styles.filterButton}>
+                <Ionicons
+                  name="options-outline"
+                  size={22}
+                  color={colors.accent}
+                />
+              </View>
+              <View style={styles.profileButton}>
+                <Ionicons
+                  name="person-circle-outline"
+                  size={28}
+                  color={colors.accent}
+                />
+              </View>
+            </View>
           </View>
         </View>
 
         {/* Main Content */}
         <View style={styles.content}>
+          {/* New Card (appears from top) */}
+          <Animated.View
+            style={[styles.card, styles.newCard, newCardAnimatedStyle]}
+          >
+            <Image
+              source={restaurants[nextIndex].image}
+              style={styles.cardImage}
+              resizeMode="cover"
+            />
+            <Animated.View
+              style={[styles.cardOverlay, { height: OVERLAY_COLLAPSED }]}
+            >
+              <View style={styles.detailsContent}>
+                <View style={styles.restaurantHeader}>
+                  <Text style={styles.restaurantName}>
+                    {restaurants[nextIndex].name}
+                  </Text>
+                  <View style={styles.ratingContainer}>
+                    <Ionicons name="star" size={16} color="#FFD700" />
+                    <Text style={styles.rating}>
+                      {restaurants[nextIndex].rating}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </Animated.View>
+          </Animated.View>
+
+          {/* Current Card */}
           <GestureDetector gesture={panGesture}>
             <Animated.View style={[styles.card, animatedStyle]}>
               <Image
@@ -252,88 +363,117 @@ export default function SwipeScreen({ navigation }: SwipeScreenProps) {
                 style={styles.cardImage}
                 resizeMode="cover"
               />
-              <Animated.View style={[styles.cardOverlay, animatedOverlayStyle]}>
-                <ScrollView
-                  style={styles.detailsScroll}
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.detailsContent}
-                  onScroll={handleScroll}
-                  scrollEventThrottle={16}
+
+              {/* Overlay bottom-sheet with its own vertical pan */}
+              <GestureDetector gesture={overlayPan}>
+                <Animated.View
+                  style={[styles.cardOverlay, animatedOverlayStyle]}
                 >
-                  <View style={styles.restaurantHeader}>
-                    <Text style={styles.restaurantName}>
-                      {currentRestaurant.name}
+                  {/* Grab handle so users know it's draggable */}
+                  <View style={styles.grabberContainer}>
+                    <View style={styles.grabber} />
+                    {/* Dropdown icon - only show when expanded */}
+                    {isOverlayExpanded && (
+                      <TouchableOpacity
+                        onPress={collapseOverlay}
+                        style={styles.dropdownButton}
+                      >
+                        <Ionicons
+                          name="chevron-down"
+                          size={20}
+                          color={colors.accent}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <ScrollView
+                    style={styles.detailsScroll}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.detailsContent}
+                    // critical: only allow scrolling when expanded
+                    scrollEnabled={scrollEnabled}
+                    // no bounces; no overscroll glow
+                    bounces={false}
+                    overScrollMode="never"
+                    scrollEventThrottle={16}
+                    decelerationRate="fast"
+                  >
+                    <View style={styles.restaurantHeader}>
+                      <Text style={styles.restaurantName}>
+                        {currentRestaurant.name}
+                      </Text>
+                      <View style={styles.ratingContainer}>
+                        <Ionicons name="star" size={16} color="#FFD700" />
+                        <Text style={styles.rating}>
+                          {currentRestaurant.rating}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.restaurantDescription}>
+                      {currentRestaurant.description}
                     </Text>
-                    <View style={styles.ratingContainer}>
-                      <Ionicons name="star" size={16} color="#FFD700" />
-                      <Text style={styles.rating}>
-                        {currentRestaurant.rating}
-                      </Text>
-                    </View>
-                  </View>
 
-                  <Text style={styles.restaurantDescription}>
-                    {currentRestaurant.description}
-                  </Text>
+                    <View style={styles.detailsSection}>
+                      <View style={styles.detailRow}>
+                        <Ionicons
+                          name="call-outline"
+                          size={18}
+                          color={colors.subtext}
+                        />
+                        <Text style={styles.detailText}>
+                          {currentRestaurant.phone}
+                        </Text>
+                      </View>
 
-                  <View style={styles.detailsSection}>
-                    <View style={styles.detailRow}>
-                      <Ionicons
-                        name="call-outline"
-                        size={18}
-                        color={colors.subtext}
-                      />
-                      <Text style={styles.detailText}>
-                        {currentRestaurant.phone}
-                      </Text>
+                      <View style={styles.detailRow}>
+                        <Ionicons
+                          name="location-outline"
+                          size={18}
+                          color={colors.subtext}
+                        />
+                        <Text style={styles.detailText}>
+                          {currentRestaurant.address}
+                        </Text>
+                      </View>
+
+                      <View style={styles.detailRow}>
+                        <Ionicons
+                          name="time-outline"
+                          size={18}
+                          color={colors.subtext}
+                        />
+                        <Text style={styles.detailText}>
+                          {currentRestaurant.hours}
+                        </Text>
+                      </View>
+
+                      <View style={styles.detailRow}>
+                        <Ionicons
+                          name="restaurant-outline"
+                          size={18}
+                          color={colors.subtext}
+                        />
+                        <Text style={styles.detailText}>
+                          {currentRestaurant.cuisine}
+                        </Text>
+                      </View>
                     </View>
 
-                    <View style={styles.detailRow}>
-                      <Ionicons
-                        name="location-outline"
-                        size={18}
-                        color={colors.subtext}
-                      />
-                      <Text style={styles.detailText}>
-                        {currentRestaurant.address}
-                      </Text>
+                    <View style={styles.featuresSection}>
+                      <Text style={styles.sectionTitle}>Features</Text>
+                      <View style={styles.featuresGrid}>
+                        {currentRestaurant.features.map((feature, index) => (
+                          <View key={index} style={styles.featureTag}>
+                            <Text style={styles.featureText}>{feature}</Text>
+                          </View>
+                        ))}
+                      </View>
                     </View>
-
-                    <View style={styles.detailRow}>
-                      <Ionicons
-                        name="time-outline"
-                        size={18}
-                        color={colors.subtext}
-                      />
-                      <Text style={styles.detailText}>
-                        {currentRestaurant.hours}
-                      </Text>
-                    </View>
-
-                    <View style={styles.detailRow}>
-                      <Ionicons
-                        name="restaurant-outline"
-                        size={18}
-                        color={colors.subtext}
-                      />
-                      <Text style={styles.detailText}>
-                        {currentRestaurant.cuisine}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.featuresSection}>
-                    <Text style={styles.sectionTitle}>Features</Text>
-                    <View style={styles.featuresGrid}>
-                      {currentRestaurant.features.map((feature, index) => (
-                        <View key={index} style={styles.featureTag}>
-                          <Text style={styles.featureText}>{feature}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                </ScrollView>
-              </Animated.View>
+                  </ScrollView>
+                </Animated.View>
+              </GestureDetector>
             </Animated.View>
           </GestureDetector>
         </View>
@@ -352,10 +492,14 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
+    paddingVertical: 20,
+    backgroundColor: colors.bgTop,
+    borderBottomWidth: 0,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   headerContent: {
     flexDirection: "row",
@@ -367,17 +511,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: "700",
+    fontSize: 26,
+    fontWeight: "800",
     color: colors.text,
     letterSpacing: 0.5,
-    marginLeft: 12,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  filterButton: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 10,
+    padding: 10,
+  },
+  profileButton: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 15,
+    padding: 6,
   },
   content: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 20,
+    backgroundColor: colors.bgTop,
   },
   card: {
     width: CARD_WIDTH,
@@ -389,6 +548,10 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
     overflow: "hidden",
+  },
+  newCard: {
+    position: "absolute",
+    zIndex: 1,
   },
   cardImage: {
     width: "100%",
@@ -402,6 +565,25 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.98)",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+  },
+  grabberContainer: {
+    alignItems: "center",
+    paddingTop: 8,
+  },
+  grabber: {
+    width: 48,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#E5E7EB",
+    marginBottom: 6,
+  },
+  dropdownButton: {
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
   },
   detailsScroll: {
     flex: 1,
