@@ -158,40 +158,32 @@ async function extractIntakeFromText(userText) {
 
     const system =
       "You are a travel intake parser.\n" +
-      "Return strictly valid JSON that matches this TypeScript shape:\n\n" +
-      "type Intake = {\n" +
-      "  destinations: Array<{ city: string; region?: string; country?: string }>;\n" +
-      "  dates?: { start?: string; end?: string };\n" +
-      "  trip_length_days?: number;\n" +
-      "  party: { adults: number; kids?: number };\n" +
-      '  budget: { level?: "low" | "medium" | "high"; per_person_daily_usd?: number };\n' +
-      '  vibe: { pace: "relaxed" | "balanced" | "adventurous"; themes?: string[] };\n' +
-      "  travel_dates_for_seasonality?: boolean;\n" +
-      "  dietary?: string[];\n" +
-      "  extras?: Record<string, unknown>;\n" +
-      "};\n\n" +
-      "Rules\n" +
+      "You MUST return ONLY valid JSON that matches this exact structure:\n\n" +
+      "{\n" +
+      '  "destinations": [{"city": "string", "region": "string", "country": "string"}],\n' +
+      '  "dates": {"start": "yyyy-mm-dd", "end": "yyyy-mm-dd"},\n' +
+      '  "trip_length_days": number,\n' +
+      '  "party": {"adults": number, "kids": number},\n' +
+      '  "budget": {"level": "low|medium|high", "per_person_daily_usd": number},\n' +
+      '  "vibe": {"pace": "relaxed|balanced|adventurous", "themes": ["string"]},\n' +
+      '  "travel_dates_for_seasonality": boolean,\n' +
+      '  "dietary": ["string"],\n' +
+      '  "extras": {"key": "value"}\n' +
+      "}\n\n" +
+      "Rules:\n" +
+      "- Return ONLY the JSON object, no other text\n" +
       "- Never invent facts\n" +
       "- If a detail is not explicit but strongly implied, include it and add an extras.assumptions array explaining the inference\n" +
-      "- If the user gives nights convert to days nights plus one\n" +
+      "- If the user gives nights convert to days (nights plus one)\n" +
       "- If the user gives total budget divide into per person per day and record the math in extras.assumptions\n" +
-      "- Normalize synonyms\n" +
-      "  - cheap student budget -> level low\n" +
-      "  - upscale fine dining -> level high\n" +
-      "  - chill easy slow -> pace relaxed\n" +
-      "  - thrill hike intense -> pace adventurous\n" +
+      "- Normalize synonyms:\n" +
+      "  - cheap/student budget -> level: low\n" +
+      "  - upscale/fine dining -> level: high\n" +
+      "  - chill/easy/slow -> pace: relaxed\n" +
+      "  - thrill/hike/intense -> pace: adventurous\n" +
       "- Dates must be ISO yyyy-mm-dd when present\n" +
-      "- Put anything that does not fit a known field into extras";
-
-    const jsonSchema = {
-      name: "IntakeExtraction",
-      schema: {
-        type: "object",
-        additionalProperties: false,
-        properties: IntakeJsonSchemaProps(),
-        required: [],
-      },
-    };
+      "- Put anything that does not fit a known field into extras\n" +
+      "- Only include fields that have values, omit empty/undefined fields";
 
     console.log(`📤 [${requestId}] Sending request to Anthropic...`, {
       model: "claude-3-5-haiku-20241022",
@@ -204,7 +196,6 @@ async function extractIntakeFromText(userText) {
       model: "claude-3-5-haiku-20241022",
       max_tokens: 1200,
       system,
-      response_format: { type: "json_schema", json_schema: jsonSchema },
       messages: [
         {
           role: "user",
@@ -231,7 +222,18 @@ async function extractIntakeFromText(userText) {
     const txt = msg?.content?.[0]?.text || "{}";
     console.log(`🔍 [${requestId}] Raw response text:`, txt);
 
-    const parsed = JSON.parse(txt);
+    // Extract JSON from the response text (in case there's extra text)
+    let jsonText = txt.trim();
+    
+    // Try to find JSON object in the text
+    const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[0];
+    }
+    
+    console.log(`🔍 [${requestId}] Extracted JSON text:`, jsonText);
+
+    const parsed = JSON.parse(jsonText);
     const validated = safeParse(IntakeSchema, parsed);
 
     console.log(
