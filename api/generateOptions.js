@@ -197,6 +197,30 @@ module.exports = async function handler(req, res) {
 
     console.log("Final parsed JSON keys:", Object.keys(json));
 
+    // Debug: Show actual structure with proper formatting
+    console.log("Categories count:", json.categories?.length || 0);
+    console.log("Restaurants count:", json.restaurants?.length || 0);
+    console.log("Activities count:", json.activities?.length || 0);
+
+    if (json.categories?.length) {
+      console.log(
+        "Sample category:",
+        JSON.stringify(json.categories[0], null, 2)
+      );
+    }
+    if (json.restaurants?.length) {
+      console.log(
+        "Sample restaurant:",
+        JSON.stringify(json.restaurants[0], null, 2)
+      );
+    }
+    if (json.activities?.length) {
+      console.log(
+        "Sample activity:",
+        JSON.stringify(json.activities[0], null, 2)
+      );
+    }
+
     // If the response is empty or invalid after all attempts, throw an error to trigger fallback
     if (
       !rawText ||
