@@ -202,6 +202,22 @@ module.exports = async function handler(req, res) {
     console.log("Restaurants count:", json.restaurants?.length || 0);
     console.log("Activities count:", json.activities?.length || 0);
 
+    // Log all restaurant names
+    if (json.restaurants?.length > 0) {
+      console.log(
+        "🍽️ Generated restaurant names:",
+        json.restaurants.map((r) => r.title || r.name).join(", ")
+      );
+    }
+
+    // Log all activity names
+    if (json.activities?.length > 0) {
+      console.log(
+        "🎯 Generated activity names:",
+        json.activities.map((a) => a.title || a.name).join(", ")
+      );
+    }
+
     if (json.categories?.length) {
       console.log(
         "Sample category:",
@@ -263,6 +279,16 @@ module.exports = async function handler(req, res) {
     // Post process
     let payload = PayloadSchema.parse(json);
     payload = polishPayload(payload, cityFallback, scaled);
+
+    // Log final payload names being sent to frontend
+    console.log(
+      "📤 Final restaurants being sent:",
+      payload.restaurants?.map((r) => r.title).join(", ") || "none"
+    );
+    console.log(
+      "📤 Final activities being sent:",
+      payload.activities?.map((a) => a.title).join(", ") || "none"
+    );
 
     res.status(200).json({
       status: "ok",
@@ -332,12 +358,12 @@ Output schema example
     {OptionalCategory}...
   ],
 
-  "restaurants": Restaurant[],   // total about ${
+  "restaurants": Restaurant[],   // EXACTLY ${
     scaled.restaurants
-  } across all cities
-  "activities": Activity[],      // total about ${
+  } unique restaurants across all cities - CRITICAL: Must provide full count
+  "activities": Activity[],      // EXACTLY ${
     scaled.activities
-  } across all cities
+  } unique activities across all cities - CRITICAL: Must provide full count
 
   "guardrails": {
     "dont_repeat_restaurants": true,
@@ -381,14 +407,23 @@ Activity = {
 }
 
 Constraints
-- Produce roughly ${scaled.restaurants} restaurants and ${
+- CRITICAL: Must produce EXACTLY ${
+    scaled.restaurants
+  } unique restaurants and EXACTLY ${
     scaled.activities
-  } activities total across all cities.
+  } unique activities in the restaurants and activities arrays. This is not optional.
 - Always include the three required categories. Each category must have exactly 4 examples.
+- The restaurants array must be completely separate from category examples and contain the full count.
+- The activities array must be completely separate from category examples and contain the full count.
 - No duplicate names within 200 meters. Vary cuisines and categories. Respect dietary.
 - If you are unsure about coords, omit them.
+- Focus on quality and variety - spread across different neighborhoods and price ranges.
 
-IMPORTANT: Return ONLY the JSON object. Do not include any explanatory text, markdown formatting, or other content.
+IMPORTANT: The user is requesting ${scaled.restaurants} restaurants and ${
+    scaled.activities
+  } activities for a ${
+    scaled.days
+  }-day trip. You MUST provide exactly these counts in the main arrays. Return ONLY the JSON object. Do not include any explanatory text, markdown formatting, or other content.
 `.trim();
 }
 

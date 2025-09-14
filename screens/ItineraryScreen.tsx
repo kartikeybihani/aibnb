@@ -11,8 +11,6 @@ import {
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
-  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -382,18 +380,34 @@ export default function ItineraryScreen({
   const slideUpValue = useSharedValue(30);
 
   // Get itinerary data from route params
-  const { itinerary: dynamicItinerary, meta, error } = route.params || {};
+  const {
+    itinerary: dynamicItinerary,
+    meta,
+    error,
+    intake,
+  } = route.params || {};
 
   // Use dynamic itinerary if available, otherwise fallback to hardcoded data
   const itineraryData = dynamicItinerary || {
-    title: "Your Amazing Trip",
-    summary: "A carefully crafted itinerary based on your preferences",
-    totalDays: 5,
-    cities: ["Milan", "Venice", "Florence"],
+    title: error
+      ? "Sample Itinerary"
+      : intake?.destinations?.[0]?.city
+      ? `Your ${intake.destinations[0].city} Adventure`
+      : "Your Amazing Trip",
+    summary: error
+      ? "This is a sample itinerary. We encountered an issue generating your personalized trip."
+      : "A carefully crafted itinerary based on your preferences",
+    totalDays: intake?.trip_length_days || 5,
+    cities: intake?.destinations?.map((d) => d.city) || [
+      "Milan",
+      "Venice",
+      "Florence",
+    ],
     days: itinerary, // Use hardcoded data as fallback
     estimatedCost: {
-      total: 1500,
-      perPerson: 750,
+      total:
+        (intake?.trip_length_days || 5) * 300 * (intake?.party?.adults || 2),
+      perPerson: (intake?.trip_length_days || 5) * 300,
       currency: "USD",
     },
   };
@@ -409,25 +423,6 @@ export default function ItineraryScreen({
   }));
 
   const renderActivityCard = (activity: any, index: number) => {
-    const cardOpacity = useSharedValue(0);
-    const cardSlide = useSharedValue(20);
-
-    useEffect(() => {
-      cardOpacity.value = withDelay(
-        index * 100,
-        withTiming(1, { duration: 600 })
-      );
-      cardSlide.value = withDelay(
-        index * 100,
-        withTiming(0, { duration: 600 })
-      );
-    }, []);
-
-    const cardStyle = useAnimatedStyle(() => ({
-      opacity: cardOpacity.value,
-      transform: [{ translateY: cardSlide.value }],
-    }));
-
     // Map activity type to icon
     const getActivityIcon = (type: string) => {
       switch (type) {
@@ -445,7 +440,7 @@ export default function ItineraryScreen({
     };
 
     return (
-      <Animated.View key={index} style={[styles.activityCard, cardStyle]}>
+      <View key={index} style={styles.activityCard}>
         <View style={styles.activityHeader}>
           <View style={styles.timeContainer}>
             <Text style={styles.timeText}>{activity.time}</Text>
@@ -486,32 +481,13 @@ export default function ItineraryScreen({
             </View>
           )}
         </View>
-      </Animated.View>
+      </View>
     );
   };
 
   const renderDayCard = (dayData: any, index: number) => {
-    const cardOpacity = useSharedValue(0);
-    const cardSlide = useSharedValue(30);
-
-    useEffect(() => {
-      cardOpacity.value = withDelay(
-        index * 200,
-        withTiming(1, { duration: 800 })
-      );
-      cardSlide.value = withDelay(
-        index * 200,
-        withSpring(0, { damping: 15, stiffness: 100 })
-      );
-    }, []);
-
-    const cardStyle = useAnimatedStyle(() => ({
-      opacity: cardOpacity.value,
-      transform: [{ translateY: cardSlide.value }],
-    }));
-
     return (
-      <Animated.View key={index} style={[styles.dayCard, cardStyle]}>
+      <View key={index} style={styles.dayCard}>
         {/* Glassmorphism Header */}
         <View style={styles.dayHeader}>
           <View style={styles.dayHeaderTop}>
@@ -559,7 +535,7 @@ export default function ItineraryScreen({
             renderActivityCard(activity, activityIndex)
           )}
         </View>
-      </Animated.View>
+      </View>
     );
   };
 

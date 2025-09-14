@@ -138,6 +138,9 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
     totalSwiped: 0,
   });
 
+  // Loading state for itinerary composition
+  const [isComposingItinerary, setIsComposingItinerary] = React.useState(false);
+
   // API instance
   const [api] = React.useState(() => new TravelIntakeAPI());
 
@@ -179,33 +182,152 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
   });
 
   // Use options data if available, otherwise fallback to hardcoded restaurants
-  const availableOptions = options?.restaurants || restaurants;
-  const currentRestaurant = availableOptions[currentRestaurantIndex];
+  const availableOptions = React.useMemo(() => {
+    if (options?.restaurants && options.restaurants.length > 0) {
+      console.log(
+        "🍽️ Using API restaurants:",
+        options.restaurants.length,
+        "options"
+      );
+
+      // Log all restaurant names
+      console.log(
+        "🍽️ Restaurant names:",
+        options.restaurants.map((r) => r.title || r.name).join(", ")
+      );
+
+      return options.restaurants;
+    }
+    console.log("🍽️ Falling back to hardcoded restaurants");
+    return restaurants;
+  }, [options?.restaurants]);
+
+  const currentRestaurant = availableOptions?.[currentRestaurantIndex];
+
+  // Log activities data when available
+  React.useEffect(() => {
+    if (options?.activities && options.activities.length > 0) {
+      console.log(
+        "🎯 API Activities received:",
+        options.activities.length,
+        "activities"
+      );
+
+      // Log all activity names
+      console.log(
+        "🎯 Activity names:",
+        options.activities.map((a) => a.title || a.name).join(", ")
+      );
+    }
+  }, [options?.activities]);
+
+  // Log current data for debugging
+  React.useEffect(() => {
+    console.log("🔍 SwipeScreen Debug:", {
+      availableOptionsCount: availableOptions?.length || 0,
+      currentIndex: currentRestaurantIndex,
+      currentRestaurant: currentRestaurant?.name || currentRestaurant?.title,
+      isAPIData: !!options?.restaurants?.length,
+      activitiesCount: options?.activities?.length || 0,
+      swipeData,
+    });
+  }, [
+    currentRestaurantIndex,
+    availableOptions,
+    currentRestaurant,
+    swipeData,
+    options?.activities,
+  ]);
+
+  // Safety check - if no options are available, show loading or error state
+  if (!availableOptions || availableOptions.length === 0) {
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
+          <View
+            style={[
+              styles.content,
+              { justifyContent: "center", alignItems: "center" },
+            ]}
+          >
+            <Text style={styles.errorText}>Loading options...</Text>
+            <Text style={styles.errorSubtext}>
+              Please wait while we prepare your recommendations
+            </Text>
+          </View>
+        </SafeAreaView>
+      </GestureHandlerRootView>
+    );
+  }
 
   // API call to compose itinerary
   const composeItinerary = async () => {
+    setIsComposingItinerary(true);
     try {
       console.log("🎯 Calling composeItinerary with:", {
         intake,
-        options,
+        options: {
+          restaurants: options?.restaurants?.length || 0,
+          activities: options?.activities?.length || 0,
+          categories: options?.categories?.length || 0,
+        },
         swipes: swipeData,
       });
 
-      const data = await api.composeItinerary(intake, options, swipeData);
-      console.log("✅ Itinerary composed:", data);
+      // Validate required data before making API call
+      if (!intake) {
+        throw new Error("No intake data available");
+      }
 
-      // Navigate to itinerary screen with the composed itinerary
-      navigation.navigate("Itinerary", {
-        itinerary: data.itinerary,
-        meta: data.meta,
+      if (!options || !options.restaurants || !options.activities) {
+        throw new Error("Insufficient options data for itinerary creation");
+      }
+
+      if (swipeData.totalSwiped === 0) {
+        console.log(
+          "⚠️ No swipes recorded, using all available options as liked"
+        );
+        // If no swipes, assume user likes all options
+        const allRestaurantIds = options.restaurants.map(
+          (r) =>
+            r.id ||
+            r.name?.toLowerCase().replace(/\s+/g, "-") + "-restaurant" ||
+            `restaurant-${Math.random()}`
+        );
+        setSwipeData((prev) => ({
+          ...prev,
+          liked: allRestaurantIds,
+          totalSwiped: allRestaurantIds.length,
+        }));
+      }
+
+      const data = await api.composeItinerary(intake, options, swipeData);
+      console.log("✅ Itinerary composed:", {
+        status: data.status,
+        hasItinerary: !!data.itinerary,
+        title: data.itinerary?.title,
+        days: data.itinerary?.days?.length,
       });
+
+      if (data.status === "ok" && data.itinerary) {
+        // Navigate to itinerary screen with the composed itinerary
+        navigation.navigate("Itinerary", {
+          itinerary: data.itinerary,
+          meta: data.meta,
+        });
+      } else {
+        throw new Error("Invalid itinerary response from API");
+      }
     } catch (error) {
       console.error("💥 Error composing itinerary:", error);
-      // Fallback navigation
+      // Fallback navigation with error
       navigation.navigate("Itinerary", {
         itinerary: null,
         error: error instanceof Error ? error.message : "Unknown error",
+        intake, // Pass intake data for fallback display
       });
+    } finally {
+      setIsComposingItinerary(false);
     }
   };
 
@@ -233,8 +355,19 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
   };
 
   const nextRestaurant = (swipeDirection: "like" | "dislike") => {
+    const currentOption = availableOptions[currentRestaurantIndex];
+    if (!currentOption) {
+      console.error("No current option available");
+      return;
+    }
+
+    // Handle both API data format and fallback hardcoded format
     const currentRestaurantId =
-      availableOptions[currentRestaurantIndex].id.toString();
+      currentOption.id?.toString() ||
+      currentOption.name?.toLowerCase().replace(/\s+/g, "-") + "-restaurant" ||
+      `option-${currentRestaurantIndex}`;
+
+    console.log(`Swiping ${swipeDirection} on:`, currentRestaurantId);
 
     // Update swipe data
     setSwipeData((prev) => ({
@@ -252,14 +385,28 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
     const nextIndex = (currentRestaurantIndex + 1) % availableOptions.length;
     setCurrentRestaurantIndex(nextIndex);
 
-    // Check if we've completed all restaurants (cycled back to 0)
-    if (
-      nextIndex === 0 &&
-      currentRestaurantIndex === availableOptions.length - 1
-    ) {
-      // All restaurants exhausted, compose itinerary
+    // Minimum swipes before allowing itinerary composition
+    const minSwipesRequired = Math.max(
+      5,
+      Math.min(availableOptions.length, 10)
+    );
+
+    // Check if we've swiped enough and completed a cycle, or if we've swiped a lot
+    const shouldComposeItinerary =
+      (swipeData.totalSwiped >= minSwipesRequired &&
+        nextIndex === 0 &&
+        currentRestaurantIndex === availableOptions.length - 1) ||
+      swipeData.totalSwiped >= availableOptions.length * 2 || // After 2 full cycles
+      swipeData.totalSwiped >= 20; // Hard limit for very long lists
+
+    if (shouldComposeItinerary && !isComposingItinerary) {
+      console.log(
+        `🎯 Composing itinerary after ${swipeData.totalSwiped} swipes (min required: ${minSwipesRequired})`
+      );
       setTimeout(() => {
-        composeItinerary();
+        if (!isComposingItinerary) {
+          composeItinerary();
+        }
       }, 1000); // Small delay to let the animation complete
     }
 
@@ -506,6 +653,23 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
               <Text style={styles.headerTitle}>AiBnB</Text>
             </View>
             <View style={styles.headerRight}>
+              {swipeData.totalSwiped >= 3 && (
+                <TouchableOpacity
+                  style={styles.composeButton}
+                  onPress={() => {
+                    if (!isComposingItinerary) {
+                      composeItinerary();
+                    }
+                  }}
+                  disabled={isComposingItinerary}
+                >
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={22}
+                    color={colors.surface}
+                  />
+                </TouchableOpacity>
+              )}
               <View style={styles.filterButton}>
                 <Ionicons
                   name="options-outline"
@@ -544,7 +708,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
             <Image
               source={
                 availableOptions[nextIndex]?.image ||
-                restaurants[nextIndex]?.image
+                restaurants[nextIndex]?.image ||
+                require("../assets/images/swipe1.jpg") // Default fallback
               }
               style={styles.cardImage}
               resizeMode="cover"
@@ -555,14 +720,22 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
               <View style={styles.detailsContent}>
                 <View style={styles.restaurantHeader}>
                   <Text style={styles.restaurantName}>
-                    {availableOptions[nextIndex]?.name ||
-                      restaurants[nextIndex]?.name}
+                    {availableOptions[nextIndex]?.title ||
+                      availableOptions[nextIndex]?.name ||
+                      restaurants[nextIndex]?.name ||
+                      "Restaurant"}
                   </Text>
                   <View style={styles.ratingContainer}>
                     <Ionicons name="star" size={16} color="#FFD700" />
                     <Text style={styles.rating}>
-                      {availableOptions[nextIndex]?.rating ||
-                        restaurants[nextIndex]?.rating}
+                      {(availableOptions[nextIndex]?.rating_hint
+                        ? (
+                            3.5 +
+                            availableOptions[nextIndex].rating_hint * 1.5
+                          ).toFixed(1)
+                        : availableOptions[nextIndex]?.rating) ||
+                        restaurants[nextIndex]?.rating ||
+                        "4.5"}
                     </Text>
                   </View>
                 </View>
@@ -576,7 +749,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
               <Image
                 source={
                   currentRestaurant?.image ||
-                  restaurants[currentRestaurantIndex]?.image
+                  restaurants[currentRestaurantIndex]?.image ||
+                  require("../assets/images/swipe1.jpg") // Default fallback
                 }
                 style={styles.cardImage}
                 resizeMode="cover"
@@ -636,36 +810,37 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                   >
                     <View style={styles.restaurantHeader}>
                       <Text style={styles.restaurantName}>
-                        {currentRestaurant?.name ||
-                          restaurants[currentRestaurantIndex]?.name}
+                        {currentRestaurant?.title ||
+                          currentRestaurant?.name ||
+                          restaurants[currentRestaurantIndex]?.name ||
+                          "Restaurant"}
                       </Text>
                       <View style={styles.ratingContainer}>
                         <Ionicons name="star" size={16} color="#FFD700" />
                         <Text style={styles.rating}>
-                          {currentRestaurant?.rating ||
-                            restaurants[currentRestaurantIndex]?.rating}
+                          {(currentRestaurant?.rating_hint
+                            ? (
+                                3.5 +
+                                currentRestaurant.rating_hint * 1.5
+                              ).toFixed(1)
+                            : currentRestaurant?.rating) ||
+                            restaurants[currentRestaurantIndex]?.rating ||
+                            "4.5"}
                         </Text>
                       </View>
                     </View>
 
                     <Text style={styles.restaurantDescription}>
                       {currentRestaurant?.description ||
-                        restaurants[currentRestaurantIndex]?.description}
+                        restaurants[currentRestaurantIndex]?.description ||
+                        `Experience authentic ${
+                          currentRestaurant?.cuisine || "cuisine"
+                        } at this highly-rated restaurant in ${
+                          currentRestaurant?.city || "the city"
+                        }.`}
                     </Text>
 
                     <View style={styles.detailsSection}>
-                      <View style={styles.detailRow}>
-                        <Ionicons
-                          name="call-outline"
-                          size={18}
-                          color={colors.subtext}
-                        />
-                        <Text style={styles.detailText}>
-                          {currentRestaurant?.phone ||
-                            restaurants[currentRestaurantIndex]?.phone}
-                        </Text>
-                      </View>
-
                       <View style={styles.detailRow}>
                         <Ionicons
                           name="location-outline"
@@ -673,20 +848,9 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                           color={colors.subtext}
                         />
                         <Text style={styles.detailText}>
-                          {currentRestaurant?.address ||
-                            restaurants[currentRestaurantIndex]?.address}
-                        </Text>
-                      </View>
-
-                      <View style={styles.detailRow}>
-                        <Ionicons
-                          name="time-outline"
-                          size={18}
-                          color={colors.subtext}
-                        />
-                        <Text style={styles.detailText}>
-                          {currentRestaurant?.hours ||
-                            restaurants[currentRestaurantIndex]?.hours}
+                          {currentRestaurant?.city ||
+                            restaurants[currentRestaurantIndex]?.address ||
+                            "City location"}
                         </Text>
                       </View>
 
@@ -698,15 +862,44 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                         />
                         <Text style={styles.detailText}>
                           {currentRestaurant?.cuisine ||
-                            restaurants[currentRestaurantIndex]?.cuisine}
+                            restaurants[currentRestaurantIndex]?.cuisine ||
+                            "International"}
                         </Text>
                       </View>
+
+                      <View style={styles.detailRow}>
+                        <Ionicons
+                          name="time-outline"
+                          size={18}
+                          color={colors.subtext}
+                        />
+                        <Text style={styles.detailText}>
+                          {currentRestaurant?.meal_type
+                            ? `Best for ${currentRestaurant.meal_type}`
+                            : restaurants[currentRestaurantIndex]?.hours ||
+                              "Open daily"}
+                        </Text>
+                      </View>
+
+                      {currentRestaurant?.est_cost_per_person && (
+                        <View style={styles.detailRow}>
+                          <Ionicons
+                            name="card-outline"
+                            size={18}
+                            color={colors.subtext}
+                          />
+                          <Text style={styles.detailText}>
+                            ~${currentRestaurant.est_cost_per_person} per person
+                          </Text>
+                        </View>
+                      )}
                     </View>
 
                     <View style={styles.featuresSection}>
-                      <Text style={styles.sectionTitle}>Features</Text>
+                      <Text style={styles.sectionTitle}>Tags</Text>
                       <View style={styles.featuresGrid}>
                         {(
+                          currentRestaurant?.tags ||
                           currentRestaurant?.features ||
                           restaurants[currentRestaurantIndex]?.features ||
                           []
@@ -723,6 +916,21 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
             </Animated.View>
           </GestureDetector>
         </View>
+
+        {/* Loading overlay for itinerary composition */}
+        {isComposingItinerary && (
+          <View style={styles.loadingOverlay}>
+            <View style={styles.loadingContent}>
+              <Text style={styles.loadingTitle}>Creating Your Itinerary</Text>
+              <Text style={styles.loadingSubtitle}>
+                Analyzing your preferences and crafting the perfect trip...
+              </Text>
+              <View style={styles.loadingAnimation}>
+                <Text style={styles.loadingDots}>•••</Text>
+              </View>
+            </View>
+          </View>
+        )}
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -766,6 +974,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+  },
+  composeButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    padding: 10,
+    marginRight: 8,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   filterButton: {
     backgroundColor: colors.accentSoft,
@@ -965,5 +1184,63 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 2,
     fontSize: 18,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.text,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: colors.subtext,
+    textAlign: "center",
+  },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1000,
+  },
+  loadingContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: 32,
+    alignItems: "center",
+    maxWidth: screenWidth - 60,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  loadingTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.text,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  loadingSubtitle: {
+    fontSize: 14,
+    color: colors.subtext,
+    textAlign: "center",
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  loadingAnimation: {
+    alignItems: "center",
+  },
+  loadingDots: {
+    fontSize: 24,
+    color: colors.accent,
+    fontWeight: "bold",
+    letterSpacing: 4,
   },
 });

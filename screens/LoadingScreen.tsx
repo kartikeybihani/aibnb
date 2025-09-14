@@ -58,6 +58,19 @@ export default function LoadingScreen({
     try {
       console.log("🎯 Fetching options for intake:", intake);
 
+      if (!intake) {
+        throw new Error("No intake data provided");
+      }
+
+      setIsLoading(true);
+      const tripDays = intake?.trip_length_days || 5;
+      const restaurantCount = Math.max(12, tripDays * 3); // 3 restaurants per day minimum
+      const activityCount = Math.max(18, tripDays * 4); // 4 activities per day minimum
+
+      console.log(
+        `📊 Requesting ${restaurantCount} restaurants and ${activityCount} activities for ${tripDays}-day trip`
+      );
+
       const response = await fetch(`${API_BASE_URL}/api/generateOptions`, {
         method: "POST",
         headers: {
@@ -66,23 +79,53 @@ export default function LoadingScreen({
         body: JSON.stringify({
           intake,
           counts: {
-            restaurants: 12,
-            activities: 18,
+            restaurants: restaurantCount,
+            activities: activityCount,
           },
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(
+          `API request failed: ${response.status} - ${errorText}`
+        );
       }
 
       const data = await response.json();
-      console.log("✅ Options fetched:", data);
-      setOptions(data.options);
+      console.log("✅ Options fetched:", {
+        status: data.status,
+        restaurantCount: data.options?.restaurants?.length || 0,
+        activityCount: data.options?.activities?.length || 0,
+        categoriesCount: data.options?.categories?.length || 0,
+      });
+
+      if (data.status === "ok" && data.options) {
+        // Log all restaurant names
+        if (data.options.restaurants && data.options.restaurants.length > 0) {
+          console.log(
+            "🍽️ All restaurants received:",
+            data.options.restaurants.map((r) => r.title || r.name).join(", ")
+          );
+        }
+
+        // Log all activity names
+        if (data.options.activities && data.options.activities.length > 0) {
+          console.log(
+            "🎯 All activities received:",
+            data.options.activities.map((a) => a.title || a.name).join(", ")
+          );
+        }
+
+        setOptions(data.options);
+      } else {
+        throw new Error("Invalid response format or status");
+      }
       setIsLoading(false);
     } catch (error) {
       console.error("💥 Error fetching options:", error);
       setIsLoading(false);
+      // Don't set null options, let the navigation logic handle retry
     }
   };
 
@@ -91,21 +134,39 @@ export default function LoadingScreen({
     if (intake) {
       fetchOptions();
     }
+  }, []);
 
-    // Navigate to SwipeScreen after options are loaded or timeout
-    const navigationTimer = setTimeout(() => {
-      if (options || !isLoading) {
+  // Separate useEffect to handle navigation when state changes
+  useEffect(() => {
+    if (options && !isLoading) {
+      // Validate that we have sufficient data before navigating
+      const hasValidData =
+        options.restaurants &&
+        options.restaurants.length > 0 &&
+        options.activities &&
+        options.activities.length > 0;
+
+      if (hasValidData) {
+        console.log(
+          "🎯 Options loaded with valid data, navigating to SwipeScreen"
+        );
         navigation.navigate("SwipeScreen", {
           intake,
-          options: options || {
-            restaurants: [],
-            activities: [],
-            categories: [],
-          },
+          options,
         });
+      } else {
+        console.log("⚠️ Options loaded but insufficient data, retrying...");
+        // Retry after a short delay
+        setTimeout(() => {
+          fetchOptions();
+        }, 2000);
       }
-    }, 3500);
+      return;
+    }
+  }, [options, isLoading]);
 
+  // Animation useEffect (removed navigation timeout)
+  useEffect(() => {
     const messageInterval = setInterval(() => {
       // Fade out current message
       Animated.parallel([
@@ -170,7 +231,6 @@ export default function LoadingScreen({
     dot3Animation.start();
 
     return () => {
-      clearTimeout(navigationTimer);
       clearInterval(messageInterval);
       dot1Animation.stop();
       dot2Animation.stop();
