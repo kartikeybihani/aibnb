@@ -1,5 +1,20 @@
 {
   "version": 2,
+  "functions": {
+    "api/userQuery.js": {
+      "maxDuration": 30
+    },
+    "api/test.js": {
+      "maxDuration": 10
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1",
+      "methods": ["GET", "POST", "OPTIONS"]
+    }
+  ],
   "env": {
     "ANTHROPIC_API_KEY": "ANTHROPIC_API_KEY"
   }

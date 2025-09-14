@@ -1,7 +1,7 @@
 // api/userQuery.js
 // Node.js runtime on Vercel (CommonJS)
 
-const Anthropic = require("@anthropic-ai/sdk").default;
+const Anthropic = require("@anthropic-ai/sdk");
 const { z } = require("zod");
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -54,6 +54,16 @@ const REQUIRED_KEYS = [
 ]; // not used, OK to remove
 
 module.exports = async function handler(req, res) {
+  // Enable CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.status(200).end();
+    return;
+  }
+
   if (req.method !== "POST") {
     res.status(405).json({ error: "POST only" });
     return;
@@ -70,14 +80,24 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    console.log("Processing request:", { userText, partialIntake, sessionId });
+
     let extracted = {};
     if (userText) {
+      console.log("Extracting intake from text:", userText);
       extracted = await extractIntakeFromText(userText);
+      console.log("Extracted:", extracted);
     }
+
+    console.log("Processing intake...");
     processIntake(partialIntake || {}, extracted || {}, sessionId, res);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: String(err?.message || err) });
+    console.error("API Error:", err);
+    console.error("Error stack:", err.stack);
+    res.status(500).json({
+      error: String(err?.message || err),
+      type: err?.name || "UnknownError",
+    });
   }
 };
 
