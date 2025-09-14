@@ -178,7 +178,7 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
     runOnJS(setIsOverlayExpanded)(expanded);
   });
 
-  // Combine restaurants and activities into a single swipeable collection
+  // Combine restaurants, activities, and accommodations into a single swipeable collection
   const availableOptions = React.useMemo(() => {
     const allOptions = [];
 
@@ -222,6 +222,26 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
       );
     }
 
+    // Add accommodations with proper kind indicator
+    if (options?.accommodations && options.accommodations.length > 0) {
+      const processedAccommodations = options.accommodations.map((a) => ({
+        ...a,
+        kind: a.kind || "accommodation",
+        type: "accommodation",
+      }));
+      allOptions.push(...processedAccommodations);
+
+      console.log(
+        "🏨 Using API accommodations:",
+        options.accommodations.length,
+        "options"
+      );
+      console.log(
+        "🏨 Accommodation names:",
+        options.accommodations.map((a) => a.title || a.name).join(", ")
+      );
+    }
+
     // If we have API data, shuffle the combined array for variety
     if (allOptions.length > 0) {
       // Simple shuffle algorithm
@@ -236,7 +256,9 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
         allOptions.filter((o) => o.type === "restaurant").length,
         "restaurants,",
         allOptions.filter((o) => o.type === "activity").length,
-        "activities)"
+        "activities,",
+        allOptions.filter((o) => o.type === "accommodation").length,
+        "accommodations)"
       );
       return allOptions;
     }
@@ -248,11 +270,11 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
       type: "restaurant",
       kind: "restaurant",
     }));
-  }, [options?.restaurants, options?.activities]);
+  }, [options?.restaurants, options?.activities, options?.accommodations]);
 
   const currentRestaurant = availableOptions?.[currentRestaurantIndex];
 
-  // Log activities data when available
+  // Log activities and accommodations data when available
   React.useEffect(() => {
     if (options?.activities && options.activities.length > 0) {
       console.log(
@@ -267,7 +289,21 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
         options.activities.map((a) => a.title || a.name).join(", ")
       );
     }
-  }, [options?.activities]);
+
+    if (options?.accommodations && options.accommodations.length > 0) {
+      console.log(
+        "🏨 API Accommodations received:",
+        options.accommodations.length,
+        "accommodations"
+      );
+
+      // Log all accommodation names
+      console.log(
+        "🏨 Accommodation names:",
+        options.accommodations.map((a) => a.title || a.name).join(", ")
+      );
+    }
+  }, [options?.activities, options?.accommodations]);
 
   // Log current data for debugging
   React.useEffect(() => {
@@ -287,6 +323,7 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
         )
       ),
       activitiesCount: options?.activities?.length || 0,
+      accommodationsCount: options?.accommodations?.length || 0,
       swipeData,
     });
   }, [
@@ -295,6 +332,7 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
     currentRestaurant,
     swipeData,
     options?.activities,
+    options?.accommodations,
   ]);
 
   // Safety check - if no options are available, show loading or error state
@@ -360,7 +398,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
 
     // Handle both API data format and fallback hardcoded format
     const optionType = currentOption.type || currentOption.kind || "restaurant";
-    const suffix = optionType === "activity" ? "-activity" : "-restaurant";
+    const suffix = optionType === "activity" ? "-activity" : 
+                   optionType === "accommodation" ? "-accommodation" : "-restaurant";
     const currentOptionId =
       currentOption.id?.toString() ||
       (currentOption.name || currentOption.title)
@@ -723,6 +762,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                         styles.typeIndicator,
                         availableOptions[nextIndex]?.type === "activity"
                           ? styles.activityIndicator
+                          : availableOptions[nextIndex]?.type === "accommodation"
+                          ? styles.accommodationIndicator
                           : styles.restaurantIndicator,
                       ]}
                     >
@@ -730,6 +771,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                         name={
                           availableOptions[nextIndex]?.type === "activity"
                             ? "compass-outline"
+                            : availableOptions[nextIndex]?.type === "accommodation"
+                            ? "bed-outline"
                             : "restaurant-outline"
                         }
                         size={14}
@@ -738,6 +781,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                       <Text style={styles.typeText}>
                         {availableOptions[nextIndex]?.type === "activity"
                           ? "ACTIVITY"
+                          : availableOptions[nextIndex]?.type === "accommodation"
+                          ? "STAY"
                           : "DINING"}
                       </Text>
                     </View>
@@ -839,6 +884,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                             styles.typeIndicator,
                             currentRestaurant?.type === "activity"
                               ? styles.activityIndicator
+                              : currentRestaurant?.type === "accommodation"
+                              ? styles.accommodationIndicator
                               : styles.restaurantIndicator,
                           ]}
                         >
@@ -846,6 +893,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                             name={
                               currentRestaurant?.type === "activity"
                                 ? "compass-outline"
+                                : currentRestaurant?.type === "accommodation"
+                                ? "bed-outline"
                                 : "restaurant-outline"
                             }
                             size={14}
@@ -854,6 +903,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                           <Text style={styles.typeText}>
                             {currentRestaurant?.type === "activity"
                               ? "ACTIVITY"
+                              : currentRestaurant?.type === "accommodation"
+                              ? "STAY"
                               : "DINING"}
                           </Text>
                         </View>
@@ -887,6 +938,14 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                               currentRestaurant?.category || "activity"
                             } experience in ${
                               currentRestaurant?.city || "the city"
+                            }.`
+                          : currentRestaurant?.type === "accommodation"
+                          ? `Stay at this ${
+                              currentRestaurant?.accommodation_type || "hotel"
+                            } in ${
+                              currentRestaurant?.city || "the city"
+                            }. Perfect for ${
+                              currentRestaurant?.target_audience || "travelers"
                             }.`
                           : `Experience authentic ${
                               currentRestaurant?.cuisine || "cuisine"
@@ -926,6 +985,24 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                                 : currentRestaurant?.category === "class"
                                 ? "school-outline"
                                 : "star-outline"
+                              : currentRestaurant?.type === "accommodation"
+                              ? currentRestaurant?.accommodation_type === "hotel"
+                                ? "business-outline"
+                                : currentRestaurant?.accommodation_type === "hostel"
+                                ? "people-outline"
+                                : currentRestaurant?.accommodation_type === "airbnb"
+                                ? "home-outline"
+                                : currentRestaurant?.accommodation_type === "boutique"
+                                ? "diamond-outline"
+                                : currentRestaurant?.accommodation_type === "resort"
+                                ? "umbrella-outline"
+                                : currentRestaurant?.accommodation_type === "apartment"
+                                ? "business-outline"
+                                : currentRestaurant?.accommodation_type === "guesthouse"
+                                ? "home-outline"
+                                : currentRestaurant?.accommodation_type === "capsule"
+                                ? "cube-outline"
+                                : "bed-outline"
                               : "restaurant-outline"
                           }
                           size={18}
@@ -934,6 +1011,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                         <Text style={styles.detailText}>
                           {currentRestaurant?.type === "activity"
                             ? currentRestaurant?.category || "Activity"
+                            : currentRestaurant?.type === "accommodation"
+                            ? currentRestaurant?.accommodation_type || "Hotel"
                             : currentRestaurant?.cuisine ||
                               restaurants[currentRestaurantIndex]?.cuisine ||
                               "International"}
@@ -951,6 +1030,10 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                             ? currentRestaurant?.est_duration_min
                               ? `${currentRestaurant.est_duration_min} minutes`
                               : "Duration varies"
+                            : currentRestaurant?.type === "accommodation"
+                            ? currentRestaurant?.target_audience
+                              ? `Best for ${currentRestaurant.target_audience}`
+                              : "All travelers welcome"
                             : currentRestaurant?.meal_type
                             ? `Best for ${currentRestaurant.meal_type}`
                             : restaurants[currentRestaurantIndex]?.hours ||
@@ -958,7 +1041,7 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                         </Text>
                       </View>
 
-                      {currentRestaurant?.est_cost_per_person && (
+                      {(currentRestaurant?.est_cost_per_person || currentRestaurant?.est_cost_per_night) && (
                         <View style={styles.detailRow}>
                           <Ionicons
                             name="card-outline"
@@ -966,7 +1049,9 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                             color={colors.subtext}
                           />
                           <Text style={styles.detailText}>
-                            ~${currentRestaurant.est_cost_per_person} per person
+                            {currentRestaurant?.type === "accommodation"
+                              ? `~$${currentRestaurant.est_cost_per_night} per night`
+                              : `~$${currentRestaurant.est_cost_per_person} per person`}
                           </Text>
                         </View>
                       )}
@@ -981,6 +1066,21 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                             />
                             <Text style={styles.detailText}>
                               Ticket required
+                            </Text>
+                          </View>
+                        )}
+
+                      {currentRestaurant?.type === "accommodation" &&
+                        currentRestaurant?.amenities && (
+                          <View style={styles.detailRow}>
+                            <Ionicons
+                              name="checkmark-circle-outline"
+                              size={18}
+                              color={colors.subtext}
+                            />
+                            <Text style={styles.detailText}>
+                              {currentRestaurant.amenities.slice(0, 3).join(", ")}
+                              {currentRestaurant.amenities.length > 3 && "..."}
                             </Text>
                           </View>
                         )}
@@ -1157,6 +1257,9 @@ const styles = StyleSheet.create({
   },
   activityIndicator: {
     backgroundColor: "#10B981", // Green for activities
+  },
+  accommodationIndicator: {
+    backgroundColor: "#8B5CF6", // Purple for accommodations
   },
   typeText: {
     fontSize: 11,

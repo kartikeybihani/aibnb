@@ -95,10 +95,37 @@ const ActivityNorm = z.object({
   source: z.literal("ai").default("ai"),
 });
 
+const AccommodationNorm = z.object({
+  id: z.string(),
+  kind: z.literal("accommodation"),
+  title: z.string(),
+  city: z.string(),
+  country: z.string().optional(),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  accommodation_type: z.enum([
+    "hotel",
+    "hostel",
+    "airbnb",
+    "boutique",
+    "resort",
+    "apartment",
+    "guesthouse",
+    "capsule",
+  ]),
+  tags: z.array(z.string()).optional(),
+  est_cost_per_night: z.number().optional(),
+  rating_hint: z.number().min(0).max(1).optional(),
+  amenities: z.array(z.string()).optional(),
+  target_audience: z.enum(["couples", "families", "solo", "business", "groups"]).optional(),
+  source: z.literal("ai").default("ai"),
+});
+
 const PayloadSchema = z.object({
   categories: z.array(CategorySchema),
   restaurants: z.array(RestaurantNorm),
   activities: z.array(ActivityNorm),
+  accommodations: z.array(AccommodationNorm),
   guardrails: z.object({
     dont_repeat_restaurants: z.boolean(),
     max_same_cuisine_per_trip: z.number(),
@@ -236,6 +263,7 @@ module.exports = async function handler(req, res) {
     console.log("Categories count:", json.categories?.length || 0);
     console.log("Restaurants count:", json.restaurants?.length || 0);
     console.log("Activities count:", json.activities?.length || 0);
+    console.log("Accommodations count:", json.accommodations?.length || 0);
 
     // Log all restaurant names
     if (json.restaurants?.length > 0) {
@@ -250,6 +278,14 @@ module.exports = async function handler(req, res) {
       console.log(
         "🎯 Generated activity names:",
         json.activities.map((a) => a.title || a.name).join(", ")
+      );
+    }
+
+    // Log all accommodation names
+    if (json.accommodations?.length > 0) {
+      console.log(
+        "🏨 Generated accommodation names:",
+        json.accommodations.map((a) => a.title || a.name).join(", ")
       );
     }
 
@@ -269,6 +305,12 @@ module.exports = async function handler(req, res) {
       console.log(
         "Sample activity:",
         JSON.stringify(json.activities[0], null, 2)
+      );
+    }
+    if (json.accommodations?.length) {
+      console.log(
+        "Sample accommodation:",
+        JSON.stringify(json.accommodations[0], null, 2)
       );
     }
 
@@ -292,12 +334,14 @@ module.exports = async function handler(req, res) {
     json.categories = Array.isArray(json.categories) ? json.categories : [];
     json.restaurants = Array.isArray(json.restaurants) ? json.restaurants : [];
     json.activities = Array.isArray(json.activities) ? json.activities : [];
+    json.accommodations = Array.isArray(json.accommodations) ? json.accommodations : [];
 
-    // If the model only returned categories or either list is empty, flatten
-    if (!json.restaurants?.length || !json.activities?.length) {
+    // If the model only returned categories or any list is empty, flatten
+    if (!json.restaurants?.length || !json.activities?.length || !json.accommodations?.length) {
       const flat = flattenFromCategories(json, intake);
       json.restaurants = flat.restaurants;
       json.activities = flat.activities;
+      json.accommodations = flat.accommodations;
       json.guardrails ||= {
         dont_repeat_restaurants: true,
         max_same_cuisine_per_trip: 2,
@@ -327,6 +371,7 @@ module.exports = async function handler(req, res) {
       // Try to validate individual components
       let restaurants = [];
       let activities = [];
+      let accommodations = [];
       let categories = [];
 
       try {
@@ -353,6 +398,20 @@ module.exports = async function handler(req, res) {
         console.warn("❌ Activity validation failed:", e.message);
       }
 
+      try {
+        // Pre-process accommodations to map invalid types before validation
+        const preprocessedAccommodations = (json.accommodations || []).map((a) => ({
+          ...a,
+          accommodation_type: Array.isArray(a.accommodation_type)
+            ? mapAccommodationType(a.accommodation_type[0]) || "hotel"
+            : mapAccommodationType(a.accommodation_type) || "hotel",
+        }));
+        accommodations = AccommodationNorm.array().parse(preprocessedAccommodations);
+        console.log("✅ Accommodations validated successfully:", accommodations.length);
+      } catch (e) {
+        console.warn("❌ Accommodation validation failed:", e.message);
+      }
+
       // Create minimal categories if original categories failed
       try {
         // Pre-process categories to fix title->name mapping
@@ -369,6 +428,19 @@ module.exports = async function handler(req, res) {
           "❌ Categories validation failed, creating minimal fallback"
         );
         categories = [
+          {
+            name: "Accommodations",
+            type: "accommodations",
+            description: "Places to stay",
+            examples: accommodations.slice(0, 3).map((a) => ({
+              name: a.title,
+              metadata: { 
+                style: a.accommodation_type, 
+                price_range: "$$",
+                target_audience: a.target_audience || "couples"
+              },
+            })),
+          },
           {
             name: "Dining",
             type: "dining",
@@ -393,16 +465,18 @@ module.exports = async function handler(req, res) {
         ];
       }
 
-      // If we have good restaurant and activity data, use it
-      if (restaurants.length > 0 || activities.length > 0) {
+      // If we have good data, use it
+      if (restaurants.length > 0 || activities.length > 0 || accommodations.length > 0) {
         console.log("✅ Salvaged good data:", {
           restaurants: restaurants.length,
           activities: activities.length,
+          accommodations: accommodations.length,
         });
         payload = {
           categories,
           restaurants,
           activities,
+          accommodations,
           guardrails: json.guardrails || {
             dont_repeat_restaurants: true,
             max_same_cuisine_per_trip: 2,
@@ -425,6 +499,10 @@ module.exports = async function handler(req, res) {
     console.log(
       "📤 Final activities being sent:",
       payload.activities?.map((a) => a.title).join(", ") || "none"
+    );
+    console.log(
+      "📤 Final accommodations being sent:",
+      payload.accommodations?.map((a) => a.title).join(", ") || "none"
     );
 
     res.status(200).json({
@@ -452,6 +530,7 @@ module.exports = async function handler(req, res) {
     console.log("📤 Sending fallback data:", {
       restaurants: fallback.restaurants?.length || 0,
       activities: fallback.activities?.length || 0,
+      accommodations: fallback.accommodations?.length || 0,
       categories: fallback.categories?.length || 0,
     });
     res.status(200).json({
@@ -472,9 +551,10 @@ function systemPrompt() {
 You are a travel options generator for a Tinder style swipe app.
 
 Goal
-- Generate a LARGE variety of swipeable options for Dining and Activities to give users excellent choice.
+- Generate a LARGE variety of swipeable options for Accommodations, Dining, and Activities to give users excellent choice.
 - Make items realistic and specific for the destination. Use actual business names and locations when possible.
 - Distribute Dining evenly by meal_type (breakfast/lunch/dinner/snack) with NO repeats of exact names.
+- For Accommodations: vary from budget hostels to luxury hotels, include different types (hotel/hostel/airbnb/boutique/resort/apartment/guesthouse/capsule).
 - Spread options across different neighborhoods and districts. Avoid clustering in one area.
 - Include mix of price points ($ to $$$$) and different experience types (casual to fine dining, quick to leisurely).
 - For Activities: vary from short 30min experiences to full-day adventures across all categories.
@@ -491,9 +571,9 @@ Typing rules
 
 function userPrompt(intake, scaled) {
   return `
-Generate ${scaled.restaurants} restaurants and ${
+Generate ${scaled.restaurants} restaurants, ${
     scaled.activities
-  } activities for ${intake.destinations.map((d) => d.city).join(", ")}.
+  } activities, and ${scaled.accommodations} accommodations for ${intake.destinations.map((d) => d.city).join(", ")}.
 Trip: ${scaled.days} days, ${intake.party?.adults || 2} adults, ${
     intake.budget?.level || "medium"
   } budget.
@@ -501,6 +581,7 @@ Trip: ${scaled.days} days, ${intake.party?.adults || 2} adults, ${
 JSON format:
 {
   "categories": [
+    {"name": "Accommodations", "type": "accommodations", "examples": [4 accommodation examples with name and metadata]},
     {"name": "Dining", "type": "dining", "examples": [4 restaurant examples with name and metadata]},
     {"name": "Activities", "type": "activities", "examples": [4 activity examples with name and metadata]},
     {"name": "Nightlife", "type": "nightlife", "examples": [4 nightlife examples with name and metadata]}
@@ -511,16 +592,21 @@ JSON format:
   "activities": [
     {"id": "act-1", "kind": "activity", "title": "Activity Name", "city": "City", "category": "museum", "tags": ["cultural"], "rating_hint": 0.8, "source": "ai"}
   ],
+  "accommodations": [
+    {"id": "acc-1", "kind": "accommodation", "title": "Hotel Name", "city": "City", "accommodation_type": "hotel", "tags": ["luxury"], "rating_hint": 0.8, "source": "ai"}
+  ],
   "guardrails": {"dont_repeat_restaurants": true, "max_same_cuisine_per_trip": 2, "max_commute_min_per_leg": 30}
 }
 
 CRITICAL: restaurants array must have exactly ${
     scaled.restaurants
-  } items, activities array must have exactly ${scaled.activities} items.
+  } items, activities array must have exactly ${scaled.activities} items, accommodations array must have exactly ${scaled.accommodations} items.
 
 Use REAL, SPECIFIC places in ${intake.destinations
     .map((d) => d.city)
     .join(", ")} - not generic names. Research actual establishments.
+
+For accommodations: Mix types evenly (hotel/hostel/airbnb/boutique/resort/apartment/guesthouse/capsule). Include variety of price ranges ($-$$$$), neighborhoods, and target audiences (couples/families/solo/business/groups). Avoid chain hotels - prefer local favorites and unique stays.
 
 For restaurants: Mix meal types evenly (breakfast/lunch/dinner/snack). Include variety of cuisines, price ranges ($-$$$$), and neighborhoods. Avoid chain restaurants - prefer local favorites and hidden gems.
 
@@ -551,7 +637,12 @@ function scaleCounts(intake, counts) {
     20, // Higher minimum for good selection
     50 // Higher maximum for long trips
   );
-  return { days, restaurants, activities };
+  const accommodations = clamp(
+    counts?.accommodations ?? Math.round(days * 2.5), // Accommodations for variety
+    8, // Minimum for good selection
+    20 // Maximum for long trips
+  );
+  return { days, restaurants, activities, accommodations };
 }
 
 function clamp(n, lo, hi) {
@@ -778,6 +869,40 @@ function mapActivityType(t) {
   return "outdoor";
 }
 
+function mapAccommodationType(t) {
+  const s = String(t || "").toLowerCase();
+
+  // Direct matches first
+  if (s === "hotel") return "hotel";
+  if (s === "hostel") return "hostel";
+  if (s === "airbnb") return "airbnb";
+  if (s === "boutique") return "boutique";
+  if (s === "resort") return "resort";
+  if (s === "apartment") return "apartment";
+  if (s === "guesthouse") return "guesthouse";
+  if (s === "capsule") return "capsule";
+
+  // Map other accommodation types to allowed categories
+  if (["hotel", "inn", "lodge", "suite"].some((k) => s.includes(k)))
+    return "hotel";
+  if (["hostel", "backpacker", "dormitory"].some((k) => s.includes(k)))
+    return "hostel";
+  if (["airbnb", "rental", "home", "house"].some((k) => s.includes(k)))
+    return "airbnb";
+  if (["boutique", "design", "unique", "charming"].some((k) => s.includes(k)))
+    return "boutique";
+  if (["resort", "spa", "luxury", "all-inclusive"].some((k) => s.includes(k)))
+    return "resort";
+  if (["apartment", "condo", "flat", "studio"].some((k) => s.includes(k)))
+    return "apartment";
+  if (["guesthouse", "bed", "breakfast", "bnb"].some((k) => s.includes(k)))
+    return "guesthouse";
+  if (["capsule", "pod", "minimal", "compact"].some((k) => s.includes(k)))
+    return "capsule";
+
+  return "hotel";
+}
+
 function distributeMeals(list) {
   // ensure meal_type balance when missing
   if (!list.length) return list;
@@ -802,10 +927,11 @@ function dedupeByNameCity(items) {
   });
 }
 
-// If the model only returns categories, convert dining and activities examples into normalized arrays
+// If the model only returns categories, convert dining, activities, and accommodations examples into normalized arrays
 function flattenFromCategories(payload, intake) {
   const restaurants = [];
   const activities = [];
+  const accommodations = [];
   const fallbackCity = intake.destinations?.[0]?.city || "City";
   const fallbackCountry = intake.destinations?.[0]?.country;
 
@@ -869,6 +995,37 @@ function flattenFromCategories(payload, intake) {
         });
       }
     }
+
+    if (String(cat.type).toLowerCase() === "accommodations") {
+      for (const e of cat.examples) {
+        const id = String(e.id ?? slugId(e.name));
+        const city = e.metadata?.city || fallbackCity;
+        const accommodationTypeValue = e.metadata?.style || e.metadata?.type;
+        const normalizedAccommodationType = Array.isArray(accommodationTypeValue)
+          ? mapAccommodationType(accommodationTypeValue[0])
+          : mapAccommodationType(accommodationTypeValue);
+
+        accommodations.push({
+          id,
+          kind: "accommodation",
+          title: e.name,
+          city,
+          country: e.metadata?.country || fallbackCountry,
+          lat: e.metadata?.lat,
+          lng: e.metadata?.lng,
+          accommodation_type: normalizedAccommodationType,
+          tags: e.metadata?.tags || [],
+          est_cost_per_night: priceToNumber(e.metadata?.price_range),
+          rating_hint:
+            typeof e.metadata?.rating_hint === "number"
+              ? e.metadata.rating_hint
+              : 0.5,
+          amenities: e.metadata?.amenities || [],
+          target_audience: e.metadata?.target_audience || "couples",
+          source: "ai",
+        });
+      }
+    }
   }
 
   return {
@@ -876,6 +1033,7 @@ function flattenFromCategories(payload, intake) {
       distributeMeals(dedupeByNameCity(restaurants))
     ),
     activities: ActivityNorm.array().parse(dedupeByNameCity(activities)),
+    accommodations: AccommodationNorm.array().parse(dedupeByNameCity(accommodations)),
   };
 }
 
@@ -903,6 +1061,18 @@ function polishPayload(payload, cityFallback, scaled) {
   }));
   activities = dedupeByNameCity(activities).slice(0, scaled.activities);
 
+  let accommodations = payload.accommodations.map((a) => ({
+    ...a,
+    id: a.id || slugId(a.title),
+    city: a.city || cityFallback,
+    rating_hint: typeof a.rating_hint === "number" ? a.rating_hint : 0.5,
+    accommodation_type: Array.isArray(a.accommodation_type)
+      ? mapAccommodationType(a.accommodation_type[0]) || "hotel"
+      : mapAccommodationType(a.accommodation_type) || "hotel",
+    source: "ai",
+  }));
+  accommodations = dedupeByNameCity(accommodations).slice(0, scaled.accommodations);
+
   const guardrails = payload.guardrails || {
     dont_repeat_restaurants: true,
     max_same_cuisine_per_trip: 2,
@@ -915,6 +1085,7 @@ function polishPayload(payload, cityFallback, scaled) {
     categories,
     restaurants: RestaurantNorm.array().parse(restaurants),
     activities: ActivityNorm.array().parse(activities),
+    accommodations: AccommodationNorm.array().parse(accommodations),
     guardrails,
   };
 }
@@ -922,6 +1093,53 @@ function polishPayload(payload, cityFallback, scaled) {
 function buildFallback() {
   const options = {
     categories: [
+      {
+        name: "Accommodations",
+        type: "accommodations",
+        description: "Places to stay",
+        examples: [
+          {
+            name: "Shinjuku Business Hotel",
+            metadata: { 
+              city: "Tokyo", 
+              style: "hotel",
+              price_range: "$$", 
+              rating_hint: 0.5,
+              target_audience: "business"
+            },
+          },
+          {
+            name: "Asakusa Hostel",
+            metadata: { 
+              city: "Tokyo", 
+              style: "hostel",
+              price_range: "$", 
+              rating_hint: 0.5,
+              target_audience: "solo"
+            },
+          },
+          {
+            name: "Ginza Boutique Stay",
+            metadata: { 
+              city: "Tokyo", 
+              style: "boutique",
+              price_range: "$$$", 
+              rating_hint: 0.5,
+              target_audience: "couples"
+            },
+          },
+          {
+            name: "Shibuya Capsule Pods",
+            metadata: { 
+              city: "Tokyo", 
+              style: "capsule",
+              price_range: "$", 
+              rating_hint: 0.5,
+              target_audience: "solo"
+            },
+          },
+        ],
+      },
       {
         name: "Dining",
         type: "dining",
@@ -1009,29 +1227,6 @@ function buildFallback() {
               duration: "60 min",
               rating_hint: 0.5,
             },
-          },
-        ],
-      },
-      {
-        name: "Accommodations",
-        type: "accommodations",
-        description: "Places to stay",
-        examples: [
-          {
-            name: "Shinjuku Business Hotel",
-            metadata: { city: "Tokyo", price_range: "$$", rating_hint: 0.5 },
-          },
-          {
-            name: "Asakusa Hostel",
-            metadata: { city: "Tokyo", price_range: "$", rating_hint: 0.5 },
-          },
-          {
-            name: "Ginza Boutique Stay",
-            metadata: { city: "Tokyo", price_range: "$$$", rating_hint: 0.5 },
-          },
-          {
-            name: "Shibuya Capsule Pods",
-            metadata: { city: "Tokyo", price_range: "$", rating_hint: 0.5 },
           },
         ],
       },
@@ -1310,6 +1505,104 @@ function buildFallback() {
         category: "class",
         est_duration_min: 120,
         rating_hint: 0.8,
+        source: "ai",
+      },
+    ],
+    accommodations: [
+      {
+        id: "acc1",
+        kind: "accommodation",
+        title: "Shinjuku Business Hotel",
+        city: "Tokyo",
+        accommodation_type: "hotel",
+        rating_hint: 0.8,
+        est_cost_per_night: 120,
+        target_audience: "business",
+        amenities: ["wifi", "gym", "business_center"],
+        source: "ai",
+      },
+      {
+        id: "acc2",
+        kind: "accommodation",
+        title: "Asakusa Hostel",
+        city: "Tokyo",
+        accommodation_type: "hostel",
+        rating_hint: 0.7,
+        est_cost_per_night: 35,
+        target_audience: "solo",
+        amenities: ["wifi", "common_area", "kitchen"],
+        source: "ai",
+      },
+      {
+        id: "acc3",
+        kind: "accommodation",
+        title: "Ginza Boutique Stay",
+        city: "Tokyo",
+        accommodation_type: "boutique",
+        rating_hint: 0.9,
+        est_cost_per_night: 200,
+        target_audience: "couples",
+        amenities: ["wifi", "spa", "rooftop"],
+        source: "ai",
+      },
+      {
+        id: "acc4",
+        kind: "accommodation",
+        title: "Shibuya Capsule Pods",
+        city: "Tokyo",
+        accommodation_type: "capsule",
+        rating_hint: 0.6,
+        est_cost_per_night: 25,
+        target_audience: "solo",
+        amenities: ["wifi", "locker", "shared_bathroom"],
+        source: "ai",
+      },
+      {
+        id: "acc5",
+        kind: "accommodation",
+        title: "Roppongi Luxury Resort",
+        city: "Tokyo",
+        accommodation_type: "resort",
+        rating_hint: 0.9,
+        est_cost_per_night: 300,
+        target_audience: "couples",
+        amenities: ["wifi", "pool", "spa", "restaurant"],
+        source: "ai",
+      },
+      {
+        id: "acc6",
+        kind: "accommodation",
+        title: "Harajuku Airbnb",
+        city: "Tokyo",
+        accommodation_type: "airbnb",
+        rating_hint: 0.8,
+        est_cost_per_night: 80,
+        target_audience: "families",
+        amenities: ["wifi", "kitchen", "washing_machine"],
+        source: "ai",
+      },
+      {
+        id: "acc7",
+        kind: "accommodation",
+        title: "Ueno Guesthouse",
+        city: "Tokyo",
+        accommodation_type: "guesthouse",
+        rating_hint: 0.7,
+        est_cost_per_night: 45,
+        target_audience: "solo",
+        amenities: ["wifi", "garden", "bike_rental"],
+        source: "ai",
+      },
+      {
+        id: "acc8",
+        kind: "accommodation",
+        title: "Akihabara Apartment",
+        city: "Tokyo",
+        accommodation_type: "apartment",
+        rating_hint: 0.8,
+        est_cost_per_night: 90,
+        target_audience: "groups",
+        amenities: ["wifi", "kitchen", "washing_machine", "balcony"],
         source: "ai",
       },
     ],
