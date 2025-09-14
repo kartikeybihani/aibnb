@@ -190,14 +190,14 @@ async function extractIntakeFromText(userText) {
       "- Only include fields that have values, omit empty/undefined fields";
 
     console.log(`📤 [${requestId}] Sending request to Anthropic...`, {
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-3.5-haiku",
       maxTokens: 1200,
       userTextPreview:
         userText?.substring(0, 200) + (userText?.length > 200 ? "..." : ""),
     });
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-3.5-haiku",
       max_tokens: 1200,
       system,
       messages: [

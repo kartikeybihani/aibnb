@@ -148,7 +148,7 @@ module.exports = async function handler(req, res) {
     const user = userPrompt(intake, scaled);
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-3.5-sonnet",
       max_tokens: 3000,
       system,
       messages: [{ role: "user", content: user }],
@@ -177,7 +177,7 @@ module.exports = async function handler(req, res) {
       status: "ok",
       options: payload,
       meta: {
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-3.5-sonnet",
         counts: scaled,
         destinations: intake.destinations.map((d) => d.city),
       },
