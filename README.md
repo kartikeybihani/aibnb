@@ -1,6 +1,53 @@
-# Welcome to your Expo app 👋
+# Travel Planning App 🌍
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native travel planning app with AI-powered trip intake using Anthropic's Claude.
+
+## Features
+
+- **Smart Trip Intake**: AI extracts structured travel preferences from natural language
+- **Interactive Chat**: Follow-up questions with quick reply chips
+- **Seamless Flow**: From chat to itinerary generation
+- **Beautiful UI**: Modern, intuitive design
+
+## Setup
+
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Environment Variables
+
+Create a `.env.local` file with:
+
+```bash
+# Anthropic API Key - Get from https://console.anthropic.com/
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# API Base URL for development
+EXPO_PUBLIC_API_URL=http://localhost:3000
+```
+
+### 3. Start Development
+
+**Start the API server:**
+```bash
+npm run dev:api
+```
+
+**Start the Expo app (in another terminal):**
+```bash
+npm start
+```
+
+## API Integration
+
+The app uses a serverless function (`api/userQuery.js`) that:
+- Extracts structured travel data using Anthropic Claude
+- Validates and merges partial intake data
+- Provides follow-up questions until complete
+- Returns ready-to-use travel preferences
 
 ## Get started
 

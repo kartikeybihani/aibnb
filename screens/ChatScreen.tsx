@@ -11,6 +11,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { TravelIntakeAPI } from "../services/api";
+import { ApiResponse, FollowUpQuestion, TravelIntake } from "../types/api";
 
 // Color tokens
 const colors = {
@@ -31,6 +33,8 @@ interface Message {
   text: string;
   isUser: boolean;
   timestamp: Date;
+  followUp?: FollowUpQuestion;
+  isLoading?: boolean;
 }
 
 interface ChatScreenProps {
@@ -41,57 +45,108 @@ interface ChatScreenProps {
 export default function ChatScreen({ navigation, route }: ChatScreenProps) {
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentIntake, setCurrentIntake] = useState<TravelIntake>({});
+  const [api] = useState(() => new TravelIntakeAPI());
   const { initialQuery } = route.params || {};
 
   useEffect(() => {
     if (initialQuery) {
-      // Add initial user message
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        text: initialQuery,
-        isUser: true,
-        timestamp: new Date(),
-      };
-      setMessages([userMessage]);
-
-      // Add AI response after a delay
-      setTimeout(() => {
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          text: "Brewing something...",
-          isUser: false,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, aiMessage]);
-      }, 1000);
+      processUserInput(initialQuery);
     }
   }, [initialQuery]);
 
-  const onSubmit = () => {
-    const trimmed = query.trim();
-    if (!trimmed) return;
+  const processUserInput = async (userText: string) => {
+    if (isProcessing) return;
+
+    setIsProcessing(true);
 
     // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: trimmed,
+      text: userText,
       isUser: true,
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setQuery("");
 
-    // Add AI response after a delay
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: "Brewing something...",
+    // Add loading message
+    const loadingMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      text: "Let me help you plan this trip...",
+      isUser: false,
+      timestamp: new Date(),
+      isLoading: true,
+    };
+
+    setMessages((prev) => [...prev, loadingMessage]);
+
+    try {
+      const response: ApiResponse = await api.processUserInput(
+        userText,
+        currentIntake
+      );
+
+      // Remove loading message
+      setMessages((prev) => prev.filter((msg) => !msg.isLoading));
+
+      if (response.status === "ready") {
+        // Trip intake is complete
+        const successMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          text: "Perfect! I have everything I need to create your amazing trip. Let's make some magic! ✨",
+          isUser: false,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, successMessage]);
+        setCurrentIntake(response.intake || {});
+
+        // Navigate to loading screen after a brief delay
+        setTimeout(() => {
+          navigation.navigate("Loading", { intake: response.intake });
+        }, 1500);
+      } else {
+        // Need follow-up questions
+        const followUpMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          text:
+            response.follow_up?.question ||
+            "I need a bit more information to help you better.",
+          isUser: false,
+          timestamp: new Date(),
+          followUp: response.follow_up,
+        };
+        setMessages((prev) => [...prev, followUpMessage]);
+        setCurrentIntake(response.partial || {});
+      }
+    } catch (error) {
+      // Remove loading message
+      setMessages((prev) => prev.filter((msg) => !msg.isLoading));
+
+      const errorMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        text: "Sorry, I encountered an issue. Could you try again?",
         isUser: false,
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, aiMessage]);
-    }, 1000);
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const onSubmit = () => {
+    const trimmed = query.trim();
+    if (!trimmed || isProcessing) return;
+
+    processUserInput(trimmed);
+    setQuery("");
+  };
+
+  const onChipPress = (chipText: string) => {
+    if (isProcessing) return;
+    processUserInput(chipText);
   };
 
   const goBack = () => {
@@ -116,14 +171,23 @@ export default function ChatScreen({ navigation, route }: ChatScreenProps) {
           {message.text}
         </Text>
       </View>
-      {!message.isUser && message.text === "Brewing something..." && (
-        <Pressable
-          onPress={() => navigation.navigate("Loading")}
-          style={styles.magicButton}
-        >
-          <Text style={styles.magicButtonText}>Start the magic</Text>
-        </Pressable>
-      )}
+
+      {/* Follow-up question chips */}
+      {!message.isUser &&
+        message.followUp &&
+        message.followUp.chips.length > 0 && (
+          <View style={styles.chipsContainer}>
+            {message.followUp.chips.map((chip, index) => (
+              <Pressable
+                key={index}
+                onPress={() => onChipPress(chip)}
+                style={styles.chip}
+              >
+                <Text style={styles.chipText}>{chip}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
     </View>
   );
 
@@ -154,19 +218,34 @@ export default function ChatScreen({ navigation, route }: ChatScreenProps) {
         </ScrollView>
 
         <View style={styles.chatInputContainer}>
-          <View style={styles.chatInputWrapper}>
+          <View
+            style={[
+              styles.chatInputWrapper,
+              isProcessing && styles.disabledInput,
+            ]}
+          >
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Ask me about your trip..."
+              placeholder={
+                isProcessing ? "Processing..." : "Ask me about your trip..."
+              }
               placeholderTextColor={colors.placeholder}
               style={styles.chatInput}
               multiline
               returnKeyType="send"
               onSubmitEditing={onSubmit}
               blurOnSubmit={false}
+              editable={!isProcessing}
             />
-            <Pressable onPress={onSubmit} style={styles.chatSendButton}>
+            <Pressable
+              onPress={onSubmit}
+              style={[
+                styles.chatSendButton,
+                isProcessing && styles.disabledButton,
+              ]}
+              disabled={isProcessing}
+            >
               <Ionicons name="arrow-up" size={18} color={colors.surface} />
             </Pressable>
           </View>
@@ -296,5 +375,33 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 14,
     fontWeight: "600",
+  },
+  // Chips styles
+  chipsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 20,
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  chipText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  // Disabled states
+  disabledInput: {
+    opacity: 0.6,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });
