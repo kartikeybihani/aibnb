@@ -48,7 +48,7 @@ const CategorySchema = z.object({
   name: z.string(),
   type: z.string(), // accommodations, dining, activities, or optional category keys
   description: z.string().optional(),
-  examples: z.array(ExampleBase).length(4),
+  examples: z.array(ExampleBase).length(4), // Expect exactly 4 examples, but handle gracefully if not
 });
 
 const RestaurantNorm = z.object({
@@ -310,8 +310,92 @@ module.exports = async function handler(req, res) {
       };
     }
 
-    // Post process
-    let payload = PayloadSchema.parse(json);
+    // Post process with robust validation
+    let payload;
+    try {
+      payload = PayloadSchema.parse(json);
+    } catch (validationError) {
+      console.warn(
+        "⚠️ Full validation failed, attempting to salvage good data:",
+        validationError.message
+      );
+
+      // Try to validate individual components
+      let restaurants = [];
+      let activities = [];
+      let categories = [];
+
+      try {
+        restaurants = RestaurantNorm.array().parse(json.restaurants || []);
+        console.log(
+          "✅ Restaurants validated successfully:",
+          restaurants.length
+        );
+      } catch (e) {
+        console.warn("❌ Restaurant validation failed:", e.message);
+      }
+
+      try {
+        activities = ActivityNorm.array().parse(json.activities || []);
+        console.log("✅ Activities validated successfully:", activities.length);
+      } catch (e) {
+        console.warn("❌ Activity validation failed:", e.message);
+      }
+
+      // Create minimal categories if original categories failed
+      try {
+        categories = CategorySchema.array().parse(json.categories || []);
+      } catch (e) {
+        console.warn(
+          "❌ Categories validation failed, creating minimal fallback"
+        );
+        categories = [
+          {
+            name: "Dining",
+            type: "dining",
+            description: "Restaurant options",
+            examples: restaurants.slice(0, 3).map((r) => ({
+              name: r.title,
+              metadata: { cuisine: r.cuisine, price_range: "$$" },
+            })),
+          },
+          {
+            name: "Activities",
+            type: "activities",
+            description: "Things to do",
+            examples: activities.slice(0, 3).map((a) => ({
+              name: a.title,
+              metadata: {
+                type: a.category,
+                duration: `${a.est_duration_min || 60} min`,
+              },
+            })),
+          },
+        ];
+      }
+
+      // If we have good restaurant and activity data, use it
+      if (restaurants.length > 0 || activities.length > 0) {
+        console.log("✅ Salvaged good data:", {
+          restaurants: restaurants.length,
+          activities: activities.length,
+        });
+        payload = {
+          categories,
+          restaurants,
+          activities,
+          guardrails: json.guardrails || {
+            dont_repeat_restaurants: true,
+            max_same_cuisine_per_trip: 2,
+            max_commute_min_per_leg: 30,
+          },
+        };
+      } else {
+        // If no good data, re-throw to trigger full fallback
+        throw validationError;
+      }
+    }
+
     payload = polishPayload(payload, cityFallback, scaled);
 
     // Log final payload names being sent to frontend
@@ -368,13 +452,15 @@ function systemPrompt() {
 You are a travel options generator for a Tinder style swipe app.
 
 Goal
-- Read the Intake and produce swipeable options for Dining and Activities, plus curated Category rows for UX variety.
-- Make items realistic for the destination. Prefer notable places over chains.
-- Distribute Dining by meal_type breakfast lunch dinner snack with no repeats.
-- Spread across neighborhoods. Avoid clustering.
-- Respect dietary and vibe. Bias to relaxed balanced adventurous as given.
-- Use rating_hint 0..1 as your confidence hint. Do not invent star ratings.
-- If you infer something, add an "assumed" tag.
+- Generate a LARGE variety of swipeable options for Dining and Activities to give users excellent choice.
+- Make items realistic and specific for the destination. Use actual business names and locations when possible.
+- Distribute Dining evenly by meal_type (breakfast/lunch/dinner/snack) with NO repeats of exact names.
+- Spread options across different neighborhoods and districts. Avoid clustering in one area.
+- Include mix of price points ($ to $$$$) and different experience types (casual to fine dining, quick to leisurely).
+- For Activities: vary from short 30min experiences to full-day adventures across all categories.
+- Respect dietary preferences and travel vibe. Bias toward the specified pace (relaxed/balanced/adventurous).
+- Use rating_hint 0..1 as your confidence (0.7+ for well-known places, 0.5-0.7 for good local spots).
+- Generate MORE options than the minimum to ensure variety - the system will select the best ones.
 - Return ONLY valid JSON that matches the Output schema exactly. Do not include any other text.
 
 Typing rules
@@ -395,9 +481,9 @@ Trip: ${scaled.days} days, ${intake.party?.adults || 2} adults, ${
 JSON format:
 {
   "categories": [
-    {"name": "Dining", "type": "dining", "examples": [{"name": "Restaurant Name", "metadata": {"cuisine": "Italian", "price_range": "$"}}]},
-    {"name": "Activities", "type": "activities", "examples": [{"name": "Museum Name", "metadata": {"type": "museum"}}]},
-    {"name": "Nightlife", "type": "nightlife", "examples": [{"name": "Bar Name", "metadata": {"type": "bar"}}]}
+    {"name": "Dining", "type": "dining", "examples": [4 restaurant examples with name and metadata]},
+    {"name": "Activities", "type": "activities", "examples": [4 activity examples with name and metadata]},
+    {"name": "Nightlife", "type": "nightlife", "examples": [4 nightlife examples with name and metadata]}
   ],
   "restaurants": [
     {"id": "rest-1", "kind": "restaurant", "title": "Restaurant Name", "city": "City", "cuisine": "Italian", "meal_type": "dinner", "tags": ["romantic"], "rating_hint": 0.8, "source": "ai"}
@@ -411,11 +497,17 @@ JSON format:
 CRITICAL: restaurants array must have exactly ${
     scaled.restaurants
   } items, activities array must have exactly ${scaled.activities} items.
-Use real places in ${intake.destinations
+
+Use REAL, SPECIFIC places in ${intake.destinations
     .map((d) => d.city)
-    .join(
-      ", "
-    )}. Mix meal types (breakfast/lunch/dinner/snack). Mix categories (outdoor/museum/tour/shopping/nightlife/class).
+    .join(", ")} - not generic names. Research actual establishments.
+
+For restaurants: Mix meal types evenly (breakfast/lunch/dinner/snack). Include variety of cuisines, price ranges ($-$$$$), and neighborhoods. Avoid chain restaurants - prefer local favorites and hidden gems.
+
+For activities: Mix categories evenly (outdoor/museum/tour/shopping/nightlife/class). Include both popular attractions and unique local experiences. Vary duration from quick 30min stops to full-day experiences.
+
+Make each option unique and compelling with detailed descriptions. Include specific neighborhoods, estimated costs, and authentic local character.
+
 Return only JSON, no explanation.
 `.trim();
 }
@@ -428,16 +520,16 @@ function scaleCounts(intake, counts) {
     diffDays(intake?.dates?.start, intake?.dates?.end) ||
     5;
 
-  // More conservative scaling to reduce token usage
+  // Generous scaling for better user experience
   const restaurants = clamp(
-    counts?.restaurants ?? Math.round(days * 2.0), // Reduced from 2.4
-    6, // Reduced min from 8
-    20 // Reduced max from 24
+    counts?.restaurants ?? Math.round(days * 3.5), // Increased for variety
+    15, // Higher minimum for good selection
+    35 // Higher maximum for long trips
   );
   const activities = clamp(
-    counts?.activities ?? Math.round(days * 2.5), // Reduced from 3.6
-    8, // Reduced min from 12
-    25 // Reduced max from 36
+    counts?.activities ?? Math.round(days * 4.5), // Increased for variety
+    20, // Higher minimum for good selection
+    50 // Higher maximum for long trips
   );
   return { days, restaurants, activities };
 }
@@ -893,7 +985,7 @@ function buildFallback() {
         city: "Tokyo",
         cuisine: "Ramen",
         meal_type: "dinner",
-        rating_hint: 0.5,
+        rating_hint: 0.8,
         source: "ai",
       },
       {
@@ -903,7 +995,7 @@ function buildFallback() {
         city: "Tokyo",
         cuisine: "Cafe",
         meal_type: "breakfast",
-        rating_hint: 0.5,
+        rating_hint: 0.7,
         source: "ai",
       },
       {
@@ -913,7 +1005,7 @@ function buildFallback() {
         city: "Tokyo",
         cuisine: "Sushi",
         meal_type: "lunch",
-        rating_hint: 0.5,
+        rating_hint: 0.9,
         source: "ai",
       },
       {
@@ -923,7 +1015,87 @@ function buildFallback() {
         city: "Tokyo",
         cuisine: "Izakaya",
         meal_type: "dinner",
-        rating_hint: 0.5,
+        rating_hint: 0.6,
+        source: "ai",
+      },
+      {
+        id: "r5",
+        kind: "restaurant",
+        title: "Tokyo Tempura House",
+        city: "Tokyo",
+        cuisine: "Tempura",
+        meal_type: "lunch",
+        rating_hint: 0.8,
+        source: "ai",
+      },
+      {
+        id: "r6",
+        kind: "restaurant",
+        title: "Yakitori Yokocho",
+        city: "Tokyo",
+        cuisine: "Yakitori",
+        meal_type: "dinner",
+        rating_hint: 0.7,
+        source: "ai",
+      },
+      {
+        id: "r7",
+        kind: "restaurant",
+        title: "Udon Corner",
+        city: "Tokyo",
+        cuisine: "Udon",
+        meal_type: "lunch",
+        rating_hint: 0.6,
+        source: "ai",
+      },
+      {
+        id: "r8",
+        kind: "restaurant",
+        title: "Pancake Paradise",
+        city: "Tokyo",
+        cuisine: "Western",
+        meal_type: "breakfast",
+        rating_hint: 0.7,
+        source: "ai",
+      },
+      {
+        id: "r9",
+        kind: "restaurant",
+        title: "Wagyu Grill",
+        city: "Tokyo",
+        cuisine: "Steakhouse",
+        meal_type: "dinner",
+        rating_hint: 0.9,
+        source: "ai",
+      },
+      {
+        id: "r10",
+        kind: "restaurant",
+        title: "Street Food Market",
+        city: "Tokyo",
+        cuisine: "Street Food",
+        meal_type: "snack",
+        rating_hint: 0.8,
+        source: "ai",
+      },
+      {
+        id: "r11",
+        kind: "restaurant",
+        title: "Kaiseki Fine Dining",
+        city: "Tokyo",
+        cuisine: "Japanese",
+        meal_type: "dinner",
+        rating_hint: 0.9,
+        source: "ai",
+      },
+      {
+        id: "r12",
+        kind: "restaurant",
+        title: "Bento Box Express",
+        city: "Tokyo",
+        cuisine: "Japanese",
+        meal_type: "lunch",
+        rating_hint: 0.7,
         source: "ai",
       },
     ],
@@ -935,7 +1107,7 @@ function buildFallback() {
         city: "Tokyo",
         category: "tour",
         est_duration_min: 90,
-        rating_hint: 0.5,
+        rating_hint: 0.7,
         source: "ai",
       },
       {
@@ -945,7 +1117,7 @@ function buildFallback() {
         city: "Tokyo",
         category: "museum",
         est_duration_min: 120,
-        rating_hint: 0.5,
+        rating_hint: 0.8,
         source: "ai",
       },
       {
@@ -955,7 +1127,7 @@ function buildFallback() {
         city: "Tokyo",
         category: "outdoor",
         est_duration_min: 120,
-        rating_hint: 0.5,
+        rating_hint: 0.7,
         source: "ai",
       },
       {
@@ -965,7 +1137,120 @@ function buildFallback() {
         city: "Tokyo",
         category: "class",
         est_duration_min: 60,
-        rating_hint: 0.5,
+        rating_hint: 0.6,
+        source: "ai",
+      },
+      {
+        id: "a5",
+        kind: "activity",
+        title: "Tokyo Skytree Visit",
+        city: "Tokyo",
+        category: "tour",
+        est_duration_min: 180,
+        rating_hint: 0.9,
+        ticket_required: true,
+        source: "ai",
+      },
+      {
+        id: "a6",
+        kind: "activity",
+        title: "Shibuya Crossing Experience",
+        city: "Tokyo",
+        category: "outdoor",
+        est_duration_min: 45,
+        rating_hint: 0.8,
+        source: "ai",
+      },
+      {
+        id: "a7",
+        kind: "activity",
+        title: "Traditional Tea Ceremony",
+        city: "Tokyo",
+        category: "class",
+        est_duration_min: 90,
+        rating_hint: 0.9,
+        source: "ai",
+      },
+      {
+        id: "a8",
+        kind: "activity",
+        title: "Tsukiji Fish Market Tour",
+        city: "Tokyo",
+        category: "tour",
+        est_duration_min: 120,
+        rating_hint: 0.8,
+        source: "ai",
+      },
+      {
+        id: "a9",
+        kind: "activity",
+        title: "Harajuku Fashion Walk",
+        city: "Tokyo",
+        category: "shopping",
+        est_duration_min: 150,
+        rating_hint: 0.7,
+        source: "ai",
+      },
+      {
+        id: "a10",
+        kind: "activity",
+        title: "Meiji Shrine Visit",
+        city: "Tokyo",
+        category: "outdoor",
+        est_duration_min: 60,
+        rating_hint: 0.8,
+        source: "ai",
+      },
+      {
+        id: "a11",
+        kind: "activity",
+        title: "Tokyo National Museum",
+        city: "Tokyo",
+        category: "museum",
+        est_duration_min: 180,
+        rating_hint: 0.8,
+        ticket_required: true,
+        source: "ai",
+      },
+      {
+        id: "a12",
+        kind: "activity",
+        title: "Ginza Shopping District",
+        city: "Tokyo",
+        category: "shopping",
+        est_duration_min: 180,
+        rating_hint: 0.7,
+        source: "ai",
+      },
+      {
+        id: "a13",
+        kind: "activity",
+        title: "Robot Restaurant Show",
+        city: "Tokyo",
+        category: "nightlife",
+        est_duration_min: 90,
+        rating_hint: 0.6,
+        ticket_required: true,
+        source: "ai",
+      },
+      {
+        id: "a14",
+        kind: "activity",
+        title: "Cherry Blossom Park",
+        city: "Tokyo",
+        category: "outdoor",
+        est_duration_min: 90,
+        rating_hint: 0.9,
+        source: "ai",
+      },
+      {
+        id: "a15",
+        kind: "activity",
+        title: "Sushi Making Class",
+        city: "Tokyo",
+        category: "class",
+        est_duration_min: 120,
+        rating_hint: 0.8,
         source: "ai",
       },
     ],

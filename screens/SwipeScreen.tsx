@@ -181,26 +181,77 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
     runOnJS(setIsOverlayExpanded)(expanded);
   });
 
-  // Use options data if available, otherwise fallback to hardcoded restaurants
+  // Combine restaurants and activities into a single swipeable collection
   const availableOptions = React.useMemo(() => {
+    const allOptions = [];
+
+    // Add restaurants with proper kind indicator
     if (options?.restaurants && options.restaurants.length > 0) {
+      const processedRestaurants = options.restaurants.map((r) => ({
+        ...r,
+        kind: r.kind || "restaurant",
+        type: "restaurant",
+      }));
+      allOptions.push(...processedRestaurants);
+
       console.log(
         "🍽️ Using API restaurants:",
         options.restaurants.length,
         "options"
       );
-
-      // Log all restaurant names
       console.log(
         "🍽️ Restaurant names:",
         options.restaurants.map((r) => r.title || r.name).join(", ")
       );
-
-      return options.restaurants;
     }
+
+    // Add activities with proper kind indicator
+    if (options?.activities && options.activities.length > 0) {
+      const processedActivities = options.activities.map((a) => ({
+        ...a,
+        kind: a.kind || "activity",
+        type: "activity",
+      }));
+      allOptions.push(...processedActivities);
+
+      console.log(
+        "🎯 Using API activities:",
+        options.activities.length,
+        "options"
+      );
+      console.log(
+        "🎯 Activity names:",
+        options.activities.map((a) => a.title || a.name).join(", ")
+      );
+    }
+
+    // If we have API data, shuffle the combined array for variety
+    if (allOptions.length > 0) {
+      // Simple shuffle algorithm
+      for (let i = allOptions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [allOptions[i], allOptions[j]] = [allOptions[j], allOptions[i]];
+      }
+      console.log(
+        "🎲 Combined and shuffled options:",
+        allOptions.length,
+        "total (",
+        allOptions.filter((o) => o.type === "restaurant").length,
+        "restaurants,",
+        allOptions.filter((o) => o.type === "activity").length,
+        "activities)"
+      );
+      return allOptions;
+    }
+
+    // Fallback to hardcoded restaurants only if no API data
     console.log("🍽️ Falling back to hardcoded restaurants");
-    return restaurants;
-  }, [options?.restaurants]);
+    return restaurants.map((r) => ({
+      ...r,
+      type: "restaurant",
+      kind: "restaurant",
+    }));
+  }, [options?.restaurants, options?.activities]);
 
   const currentRestaurant = availableOptions?.[currentRestaurantIndex];
 
@@ -362,22 +413,30 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
     }
 
     // Handle both API data format and fallback hardcoded format
-    const currentRestaurantId =
+    const optionType = currentOption.type || currentOption.kind || "restaurant";
+    const suffix = optionType === "activity" ? "-activity" : "-restaurant";
+    const currentOptionId =
       currentOption.id?.toString() ||
-      currentOption.name?.toLowerCase().replace(/\s+/g, "-") + "-restaurant" ||
+      (currentOption.name || currentOption.title)
+        ?.toLowerCase()
+        .replace(/\s+/g, "-") + suffix ||
       `option-${currentRestaurantIndex}`;
 
-    console.log(`Swiping ${swipeDirection} on:`, currentRestaurantId);
+    console.log(
+      `Swiping ${swipeDirection} on ${optionType}:`,
+      currentOptionId,
+      `(${currentOption.title || currentOption.name})`
+    );
 
     // Update swipe data
     setSwipeData((prev) => ({
       liked:
         swipeDirection === "like"
-          ? [...prev.liked, currentRestaurantId]
+          ? [...prev.liked, currentOptionId]
           : prev.liked,
       disliked:
         swipeDirection === "dislike"
-          ? [...prev.disliked, currentRestaurantId]
+          ? [...prev.disliked, currentOptionId]
           : prev.disliked,
       totalSwiped: prev.totalSwiped + 1,
     }));
@@ -719,12 +778,38 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
             >
               <View style={styles.detailsContent}>
                 <View style={styles.restaurantHeader}>
-                  <Text style={styles.restaurantName}>
-                    {availableOptions[nextIndex]?.title ||
-                      availableOptions[nextIndex]?.name ||
-                      restaurants[nextIndex]?.name ||
-                      "Restaurant"}
-                  </Text>
+                  <View style={styles.titleRow}>
+                    {/* Type indicator for next card */}
+                    <View
+                      style={[
+                        styles.typeIndicator,
+                        availableOptions[nextIndex]?.type === "activity"
+                          ? styles.activityIndicator
+                          : styles.restaurantIndicator,
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          availableOptions[nextIndex]?.type === "activity"
+                            ? "compass-outline"
+                            : "restaurant-outline"
+                        }
+                        size={14}
+                        color={colors.surface}
+                      />
+                      <Text style={styles.typeText}>
+                        {availableOptions[nextIndex]?.type === "activity"
+                          ? "ACTIVITY"
+                          : "DINING"}
+                      </Text>
+                    </View>
+                    <Text style={styles.restaurantName}>
+                      {availableOptions[nextIndex]?.title ||
+                        availableOptions[nextIndex]?.name ||
+                        restaurants[nextIndex]?.name ||
+                        "Restaurant"}
+                    </Text>
+                  </View>
                   <View style={styles.ratingContainer}>
                     <Ionicons name="star" size={16} color="#FFD700" />
                     <Text style={styles.rating}>
@@ -809,12 +894,38 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                     decelerationRate="fast"
                   >
                     <View style={styles.restaurantHeader}>
-                      <Text style={styles.restaurantName}>
-                        {currentRestaurant?.title ||
-                          currentRestaurant?.name ||
-                          restaurants[currentRestaurantIndex]?.name ||
-                          "Restaurant"}
-                      </Text>
+                      <View style={styles.titleRow}>
+                        {/* Type indicator */}
+                        <View
+                          style={[
+                            styles.typeIndicator,
+                            currentRestaurant?.type === "activity"
+                              ? styles.activityIndicator
+                              : styles.restaurantIndicator,
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              currentRestaurant?.type === "activity"
+                                ? "compass-outline"
+                                : "restaurant-outline"
+                            }
+                            size={14}
+                            color={colors.surface}
+                          />
+                          <Text style={styles.typeText}>
+                            {currentRestaurant?.type === "activity"
+                              ? "ACTIVITY"
+                              : "DINING"}
+                          </Text>
+                        </View>
+                        <Text style={styles.restaurantName}>
+                          {currentRestaurant?.title ||
+                            currentRestaurant?.name ||
+                            restaurants[currentRestaurantIndex]?.name ||
+                            "Restaurant"}
+                        </Text>
+                      </View>
                       <View style={styles.ratingContainer}>
                         <Ionicons name="star" size={16} color="#FFD700" />
                         <Text style={styles.rating}>
@@ -833,11 +944,17 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                     <Text style={styles.restaurantDescription}>
                       {currentRestaurant?.description ||
                         restaurants[currentRestaurantIndex]?.description ||
-                        `Experience authentic ${
-                          currentRestaurant?.cuisine || "cuisine"
-                        } at this highly-rated restaurant in ${
-                          currentRestaurant?.city || "the city"
-                        }.`}
+                        (currentRestaurant?.type === "activity"
+                          ? `Discover this amazing ${
+                              currentRestaurant?.category || "activity"
+                            } experience in ${
+                              currentRestaurant?.city || "the city"
+                            }.`
+                          : `Experience authentic ${
+                              currentRestaurant?.cuisine || "cuisine"
+                            } at this highly-rated restaurant in ${
+                              currentRestaurant?.city || "the city"
+                            }.`)}
                     </Text>
 
                     <View style={styles.detailsSection}>
@@ -856,14 +973,32 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
 
                       <View style={styles.detailRow}>
                         <Ionicons
-                          name="restaurant-outline"
+                          name={
+                            currentRestaurant?.type === "activity"
+                              ? currentRestaurant?.category === "museum"
+                                ? "library-outline"
+                                : currentRestaurant?.category === "outdoor"
+                                ? "leaf-outline"
+                                : currentRestaurant?.category === "tour"
+                                ? "walk-outline"
+                                : currentRestaurant?.category === "shopping"
+                                ? "storefront-outline"
+                                : currentRestaurant?.category === "nightlife"
+                                ? "wine-outline"
+                                : currentRestaurant?.category === "class"
+                                ? "school-outline"
+                                : "star-outline"
+                              : "restaurant-outline"
+                          }
                           size={18}
                           color={colors.subtext}
                         />
                         <Text style={styles.detailText}>
-                          {currentRestaurant?.cuisine ||
-                            restaurants[currentRestaurantIndex]?.cuisine ||
-                            "International"}
+                          {currentRestaurant?.type === "activity"
+                            ? currentRestaurant?.category || "Activity"
+                            : currentRestaurant?.cuisine ||
+                              restaurants[currentRestaurantIndex]?.cuisine ||
+                              "International"}
                         </Text>
                       </View>
 
@@ -874,7 +1009,11 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                           color={colors.subtext}
                         />
                         <Text style={styles.detailText}>
-                          {currentRestaurant?.meal_type
+                          {currentRestaurant?.type === "activity"
+                            ? currentRestaurant?.est_duration_min
+                              ? `${currentRestaurant.est_duration_min} minutes`
+                              : "Duration varies"
+                            : currentRestaurant?.meal_type
                             ? `Best for ${currentRestaurant.meal_type}`
                             : restaurants[currentRestaurantIndex]?.hours ||
                               "Open daily"}
@@ -893,6 +1032,20 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                           </Text>
                         </View>
                       )}
+
+                      {currentRestaurant?.type === "activity" &&
+                        currentRestaurant?.ticket_required && (
+                          <View style={styles.detailRow}>
+                            <Ionicons
+                              name="ticket-outline"
+                              size={18}
+                              color={colors.subtext}
+                            />
+                            <Text style={styles.detailText}>
+                              Ticket required
+                            </Text>
+                          </View>
+                        )}
                     </View>
 
                     <View style={styles.featuresSection}>
@@ -1060,8 +1213,34 @@ const styles = StyleSheet.create({
   restaurantHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: 12,
+  },
+  titleRow: {
+    flex: 1,
+    marginRight: 12,
+  },
+  typeIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 8,
+    alignSelf: "flex-start",
+  },
+  restaurantIndicator: {
+    backgroundColor: colors.accent,
+  },
+  activityIndicator: {
+    backgroundColor: "#10B981", // Green for activities
+  },
+  typeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.surface,
+    marginLeft: 4,
+    letterSpacing: 0.5,
   },
   restaurantName: {
     fontSize: 24,
