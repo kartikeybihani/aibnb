@@ -94,10 +94,9 @@ module.exports = async function handler(req, res) {
     const user = userPrompt(intake, options, validatedSwipes);
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 4000,
       system,
-      response_format: { type: "json" },
       messages: [{ role: "user", content: user }],
     });
 
@@ -111,7 +110,7 @@ module.exports = async function handler(req, res) {
       status: "ok",
       itinerary,
       meta: {
-        model: "claude-3-5-sonnet-20240620",
+        model: "claude-3-5-sonnet-20241022",
         swipesUsed: validatedSwipes.totalSwiped,
         likedItems: validatedSwipes.liked.length,
         dislikedItems: validatedSwipes.disliked.length,
@@ -143,7 +142,7 @@ Goal
 - Respect the user's budget, vibe, and travel constraints
 
 Rules
-- Return ONLY valid JSON matching the ItinerarySchema
+- Return ONLY valid JSON matching the ItinerarySchema exactly. Do not include any other text.
 - Use liked items as the foundation for the itinerary
 - If you need additional items not in the liked list, you can suggest them but mark them as "suggested" in notes
 - Balance activities with meals and rest time
@@ -185,7 +184,7 @@ Create a detailed itinerary using the liked items as your foundation. Include:
 5. Cost estimates based on the budget
 6. Additional recommendations if needed
 
-Return ONLY the JSON object matching this schema:
+IMPORTANT: Return ONLY the JSON object matching this schema. Do not include any explanatory text, markdown formatting, or other content.
 {
   "title": "string",
   "summary": "string", 

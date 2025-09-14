@@ -50,30 +50,27 @@ export default function LoadingScreen({
 
   // Get intake from route params
   const { intake } = route.params || {};
+  const API_BASE_URL =
+    process.env.EXPO_PUBLIC_API_URL || "http://hackermit.vercel.app/";
 
   // Fetch options from generateOptions API
   const fetchOptions = async () => {
     try {
       console.log("🎯 Fetching options for intake:", intake);
 
-      const response = await fetch(
-        `${
-          process.env.EXPO_PUBLIC_API_URL || "http://hackermit.vercel.app/"
-        }/api/generateOptions`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+      const response = await fetch(`${API_BASE_URL}/api/generateOptions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          intake,
+          counts: {
+            restaurants: 12,
+            activities: 18,
           },
-          body: JSON.stringify({
-            intake,
-            counts: {
-              restaurants: 12,
-              activities: 18,
-            },
-          }),
-        }
-      );
+        }),
+      });
 
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status}`);

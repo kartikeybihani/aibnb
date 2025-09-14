@@ -398,7 +398,7 @@ function buildFollowUp(kind, x) {
   if (kind === "dates")
     return {
       question: "What are your exact travel dates (start and end)",
-      chips: ["Enter dates", "This week", "Next month", "Summer 2024"],
+      chips: ["Enter dates", "This week", "Next month", "Summer 2026"],
     };
   if (kind === "party_size")
     return {

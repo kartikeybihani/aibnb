@@ -148,10 +148,9 @@ module.exports = async function handler(req, res) {
     const user = userPrompt(intake, scaled);
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 3000,
       system,
-      response_format: { type: "json" },
       messages: [{ role: "user", content: user }],
     });
 
@@ -178,7 +177,7 @@ module.exports = async function handler(req, res) {
       status: "ok",
       options: payload,
       meta: {
-        model: "claude-3-5-sonnet-20240620",
+        model: "claude-3-5-sonnet-20241022",
         counts: scaled,
         destinations: intake.destinations.map((d) => d.city),
       },
@@ -208,7 +207,7 @@ Goal
 - Respect dietary and vibe. Bias to relaxed balanced adventurous as given.
 - Use rating_hint 0..1 as your confidence hint. Do not invent star ratings.
 - If you infer something, add an "assumed" tag.
-- Return strict JSON only, matching the Output schema.
+- Return ONLY valid JSON that matches the Output schema exactly. Do not include any other text.
 
 Typing rules
 - String ids only. Use stable slugs or name based ids when possible.
@@ -289,6 +288,8 @@ Constraints
 - Always include the three required categories. Each category must have exactly 4 examples.
 - No duplicate names within 200 meters. Vary cuisines and categories. Respect dietary.
 - If you are unsure about coords, omit them.
+
+IMPORTANT: Return ONLY the JSON object. Do not include any explanatory text, markdown formatting, or other content.
 `.trim();
 }
 
