@@ -6,7 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
+//
 // ----- Types with Zod to validate intake coming from the model -----
 const IntakeSchema = z.object({
   destinations: z
