@@ -201,7 +201,7 @@ async function extractIntakeFromText(userText) {
     });
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 1200,
       system,
       response_format: { type: "json_schema", json_schema: jsonSchema },
