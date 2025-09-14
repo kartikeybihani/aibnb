@@ -277,9 +277,77 @@ function getDislikedItems(options, dislikedIds) {
 function tryParseJson(txt) {
   try {
     return JSON.parse(txt);
-  } catch {
-    const m = txt.match(/\{[\s\S]*\}$/);
-    return m ? JSON.parse(m[0]) : {};
+  } catch (error) {
+    console.log("JSON parse error:", error.message);
+    console.log("Attempting to fix malformed JSON...");
+
+    // Try to find the main JSON object
+    const match = txt.match(/\{[\s\S]*$/);
+    if (!match) {
+      console.log("No JSON object found in response");
+      return {};
+    }
+
+    let jsonStr = match[0];
+
+    // Multiple repair strategies
+    const repairStrategies = [
+      // Strategy 1: Simple cleanup
+      (str) => {
+        let fixed = str;
+        // Remove trailing incomplete strings
+        fixed = fixed.replace(/"[^"]*$/, '""');
+        // Remove trailing commas
+        fixed = fixed.replace(/,(\s*[}\]])/, "$1");
+        // Remove incomplete property names
+        fixed = fixed.replace(/,\s*"[^"]*$/, "");
+        return fixed;
+      },
+
+      // Strategy 2: Aggressive closing
+      (str) => {
+        let fixed = str;
+        // Remove any trailing incomplete content
+        fixed = fixed.replace(/,\s*$/, "");
+        fixed = fixed.replace(/"[^"]*$/, '""');
+        fixed = fixed.replace(/:\s*$/, ': ""');
+
+        // Count and balance braces/brackets
+        const openBraces = (fixed.match(/\{/g) || []).length;
+        const closeBraces = (fixed.match(/\}/g) || []).length;
+        const openBrackets = (fixed.match(/\[/g) || []).length;
+        const closeBrackets = (fixed.match(/\]/g) || []).length;
+
+        // Add missing closing brackets first
+        for (let i = 0; i < openBrackets - closeBrackets; i++) {
+          fixed += "]";
+        }
+
+        // Add missing closing braces
+        for (let i = 0; i < openBraces - closeBraces; i++) {
+          fixed += "}";
+        }
+
+        return fixed;
+      },
+    ];
+
+    // Try each repair strategy
+    for (let i = 0; i < repairStrategies.length; i++) {
+      try {
+        const repaired = repairStrategies[i](jsonStr);
+        console.log(`Trying repair strategy ${i + 1}...`);
+        const result = JSON.parse(repaired);
+        console.log(`Strategy ${i + 1} succeeded!`);
+        return result;
+      } catch (e) {
+        console.log(`Strategy ${i + 1} failed:`, e.message);
+        continue;
+      }
+    }
+
+    console.log("All JSON repair attempts failed, returning empty object");
+    return {};
   }
 }
 

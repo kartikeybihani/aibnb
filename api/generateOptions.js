@@ -48,7 +48,7 @@ const CategorySchema = z.object({
   name: z.string(),
   type: z.string(), // accommodations, dining, activities, or optional category keys
   description: z.string().optional(),
-  examples: z.array(ExampleBase).length(4), // Expect exactly 4 examples, but handle gracefully if not
+  examples: z.array(ExampleBase).min(1).max(6).default([]), // Prefer 4 but handle gracefully
 });
 
 const RestaurantNorm = z.object({
