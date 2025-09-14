@@ -1,10 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Dimensions,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   ScrollView,
-  StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -14,22 +17,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-// Color tokens (consistent with other screens)
-const colors = {
-  bgTop: "#FFF8F2",
-  bgBot: "#FFE8D6",
-  surface: "#FFFFFF",
-  text: "#0F172A",
-  subtext: "#475569",
-  accent: "#FF6B3D",
-  accentSoft: "#FFD8C7",
-  border: "#F2E8DF",
-  placeholder: "#9AA4B2",
-  shadow: "rgba(255,107,61,0.25)",
-  glass: "rgba(255, 255, 255, 0.25)",
-  glassBorder: "rgba(255, 255, 255, 0.18)",
-};
+import { colors, styles } from "./ItineraryScreen.styles";
+import MapModal from "./MapModal";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -379,12 +368,24 @@ export default function ItineraryScreen({
   const fadeInValue = useSharedValue(0);
   const slideUpValue = useSharedValue(30);
 
+  // State for modal and dropdown
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+  const [editQuery, setEditQuery] = useState("");
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [isMapModalVisible, setIsMapModalVisible] = useState(false);
+
+  // Animation values for summary expansion
+  const summaryHeight = useSharedValue(0);
+  const summaryOpacity = useSharedValue(0);
+
   // Get itinerary data from route params
   const {
     itinerary: dynamicItinerary,
     meta,
     error,
     intake,
+    options, // Add options to get original coordinate data
   } = route.params || {};
 
   // Use dynamic itinerary if available, otherwise fallback to hardcoded data
@@ -422,6 +423,22 @@ export default function ItineraryScreen({
     transform: [{ translateY: slideUpValue.value }],
   }));
 
+  const summaryAnimatedStyle = useAnimatedStyle(() => ({
+    height: summaryHeight.value,
+    opacity: summaryOpacity.value,
+  }));
+
+  const toggleSummary = () => {
+    setIsSummaryExpanded(!isSummaryExpanded);
+    if (!isSummaryExpanded) {
+      summaryHeight.value = withTiming(120, { duration: 400 });
+      summaryOpacity.value = withTiming(1, { duration: 300 });
+    } else {
+      summaryHeight.value = withTiming(0, { duration: 350 });
+      summaryOpacity.value = withTiming(0, { duration: 200 });
+    }
+  };
+
   const renderActivityCard = (activity: any, index: number) => {
     // Map activity type to icon
     const getActivityIcon = (type: string) => {
@@ -448,7 +465,7 @@ export default function ItineraryScreen({
           <View style={styles.iconContainer}>
             <Ionicons
               name={getActivityIcon(activity.type) as any}
-              size={24}
+              size={21}
               color={colors.accent}
             />
           </View>
@@ -508,8 +525,8 @@ export default function ItineraryScreen({
             <TouchableOpacity
               style={styles.editButton}
               onPress={() => {
-                // Handle edit functionality
-                console.log(`Edit day ${dayData.day}`);
+                setSelectedDay(dayData.day);
+                setIsEditModalVisible(true);
               }}
             >
               <Ionicons name="create-outline" size={18} color={colors.accent} />
@@ -543,18 +560,8 @@ export default function ItineraryScreen({
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <Animated.View style={[styles.header, fadeInStyle]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.accent} />
-        </TouchableOpacity>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>{itineraryData.title}</Text>
-          <Text style={styles.headerSubtitle}>
-            {itineraryData.totalDays} Days • {itineraryData.cities?.length || 0}{" "}
-            Cities • Unforgettable
-          </Text>
         </View>
         <TouchableOpacity style={styles.shareButton}>
           <Ionicons name="share-outline" size={24} color={colors.accent} />
@@ -567,8 +574,47 @@ export default function ItineraryScreen({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        <Animated.View style={fadeInStyle}>
-          <Text style={styles.introText}>{itineraryData.summary}</Text>
+        {/* Glassmorphism Summary Box */}
+        <Animated.View style={[styles.summaryGlassBox, fadeInStyle]}>
+          <TouchableOpacity
+            style={styles.summaryHeaderNew}
+            onPress={toggleSummary}
+          >
+            <View style={styles.summaryHeaderContent}>
+              <View style={styles.summaryHeaderLeft}>
+                <Text style={styles.summaryTitle}>Summary</Text>
+                <Text style={styles.tripInfoInSummary}>
+                  {itineraryData.totalDays} Days •{" "}
+                  {itineraryData.cities?.length || 0} Cities • Unforgettable
+                </Text>
+              </View>
+              <Ionicons
+                name={isSummaryExpanded ? "chevron-up" : "chevron-forward"}
+                size={20}
+                color={colors.accent}
+              />
+            </View>
+          </TouchableOpacity>
+
+          <Animated.View
+            style={[styles.summaryExpandedContent, summaryAnimatedStyle]}
+          >
+            <Text style={styles.summaryTextNew}>{itineraryData.summary}</Text>
+          </Animated.View>
+        </Animated.View>
+
+        {/* Map Button */}
+        <Animated.View style={[styles.mapButtonContainer, fadeInStyle]}>
+          <TouchableOpacity
+            style={styles.mapButton}
+            onPress={() => setIsMapModalVisible(true)}
+          >
+            <View style={styles.mapButtonContent}>
+              <Ionicons name="map" size={24} color={colors.surface} />
+              <Text style={styles.mapButtonText}>View on Map</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.surface} />
+          </TouchableOpacity>
         </Animated.View>
 
         {error && (
@@ -620,291 +666,87 @@ export default function ItineraryScreen({
           </View>
         </Animated.View>
       </ScrollView>
+
+      {/* Edit Modal */}
+      <Modal
+        visible={isEditModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardAvoidingView}
+            keyboardVerticalOffset={Platform.OS === "ios" ? -15 : 20}
+          >
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <TouchableOpacity
+                onPress={() => setIsEditModalVisible(false)}
+                style={styles.modalBackButton}
+              >
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Edit Day {selectedDay}</Text>
+              <View style={{ width: 40 }} />
+            </View>
+
+            {/* Chat Container */}
+            <ScrollView
+              style={styles.modalChatContainer}
+              contentContainerStyle={styles.modalChatContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.modalWelcome}>
+                <Text style={styles.modalWelcomeText}>
+                  What you'd like to change about Day {selectedDay}!
+                </Text>
+              </View>
+            </ScrollView>
+
+            {/* Input Container */}
+            <View style={styles.modalInputContainer}>
+              <View style={styles.modalInputWrapper}>
+                <TextInput
+                  value={editQuery}
+                  onChangeText={setEditQuery}
+                  placeholder="What would you like to change?"
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.modalInput}
+                  multiline
+                  returnKeyType="send"
+                  onSubmitEditing={() => {
+                    // Handle submit
+                    console.log("Edit request:", editQuery);
+                    setEditQuery("");
+                  }}
+                  blurOnSubmit={true}
+                />
+                <TouchableOpacity
+                  onPress={() => {
+                    // Handle submit
+                    console.log("Edit request:", editQuery);
+                    setEditQuery("");
+                  }}
+                  style={styles.modalSendButton}
+                >
+                  <Ionicons name="arrow-up" size={18} color={colors.surface} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Map Modal */}
+      <MapModal
+        visible={isMapModalVisible}
+        onClose={() => setIsMapModalVisible(false)}
+        itineraryData={itineraryData}
+        options={options}
+      />
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bgTop,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    backgroundColor: colors.bgTop,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backButton: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: colors.accentSoft,
-  },
-  headerContent: {
-    flex: 1,
-    alignItems: "center",
-    marginHorizontal: 16,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: colors.subtext,
-    marginTop: 2,
-  },
-  shareButton: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: colors.accentSoft,
-  },
-  scrollContainer: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  introText: {
-    fontSize: 16,
-    color: colors.subtext,
-    lineHeight: 24,
-    textAlign: "center",
-    marginBottom: 30,
-    paddingHorizontal: 10,
-  },
-  dayCard: {
-    backgroundColor: colors.glass,
-    borderRadius: 20,
-    marginBottom: 24,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  dayHeader: {
-    padding: 20,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  dayHeaderTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  dayHeaderLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  dayNumberContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 16,
-  },
-  dayNumber: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: colors.surface,
-  },
-  dayInfo: {
-    flex: 1,
-  },
-  dayDate: {
-    fontSize: 14,
-    color: colors.subtext,
-    fontWeight: "500",
-    marginBottom: 4,
-  },
-  dayTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.text,
-    marginBottom: 2,
-  },
-  cityName: {
-    fontSize: 16,
-    color: colors.accent,
-    fontWeight: "600",
-  },
-  editButton: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: colors.accentSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  dayStats: {
-    flexDirection: "row",
-    gap: 16,
-  },
-  statItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  statText: {
-    fontSize: 12,
-    color: colors.subtext,
-    fontWeight: "500",
-  },
-  activitiesContainer: {
-    padding: 20,
-  },
-  activityCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  activityHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  timeContainer: {
-    backgroundColor: colors.accentSoft,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  timeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.accent,
-  },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.accentSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  activityTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.text,
-    marginBottom: 6,
-  },
-  activityDescription: {
-    fontSize: 14,
-    color: colors.subtext,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  detailsContainer: {
-    gap: 4,
-  },
-  detailItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-  },
-  bulletPoint: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.accent,
-    marginTop: 6,
-  },
-  detailText: {
-    fontSize: 12,
-    color: colors.subtext,
-    flex: 1,
-    lineHeight: 16,
-  },
-  summaryCard: {
-    backgroundColor: colors.glass,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  summaryTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.text,
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  summaryGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 16,
-  },
-  summaryItem: {
-    flex: 1,
-    minWidth: "45%",
-    alignItems: "center",
-    padding: 12,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: colors.subtext,
-    marginTop: 4,
-    marginBottom: 2,
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  errorCard: {
-    backgroundColor: colors.accentSoft,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  errorText: {
-    fontSize: 14,
-    color: colors.accent,
-    fontWeight: "600",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  errorSubtext: {
-    fontSize: 12,
-    color: colors.subtext,
-    textAlign: "center",
-  },
-});

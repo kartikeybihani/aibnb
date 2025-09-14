@@ -9,6 +9,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { TravelIntakeAPI } from "../services/api";
 
 // Color tokens (consistent with other screens)
 const colors = {
@@ -28,11 +29,19 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 interface ItineraryLoadingScreenProps {
   navigation: any;
+  route: any;
 }
 
 export default function ItineraryLoadingScreen({
   navigation,
+  route,
 }: ItineraryLoadingScreenProps) {
+  // Get data from route params
+  const { intake, options, swipeData } = route.params || {};
+
+  // API instance
+  const [api] = React.useState(() => new TravelIntakeAPI());
+
   // Animation values
   const pulseScale = useSharedValue(1);
   const rotateValue = useSharedValue(0);
@@ -42,7 +51,82 @@ export default function ItineraryLoadingScreen({
   const dotOpacity2 = useSharedValue(0.3);
   const dotOpacity3 = useSharedValue(0.3);
 
+  // API call to compose itinerary
+  const composeItinerary = async () => {
+    try {
+      console.log(
+        "🎯 Calling composeItinerary from ItineraryLoadingScreen with:",
+        {
+          intake,
+          options: {
+            restaurants: options?.restaurants?.length || 0,
+            activities: options?.activities?.length || 0,
+            categories: options?.categories?.length || 0,
+          },
+          swipes: swipeData,
+        }
+      );
+
+      // Validate required data before making API call
+      if (!intake) {
+        throw new Error("No intake data available");
+      }
+
+      if (!options || !options.restaurants || !options.activities) {
+        throw new Error("Insufficient options data for itinerary creation");
+      }
+
+      if (swipeData.totalSwiped === 0) {
+        console.log(
+          "⚠️ No swipes recorded, using all available options as liked"
+        );
+        // If no swipes, assume user likes all options
+        const allRestaurantIds = options.restaurants.map(
+          (r) =>
+            r.id ||
+            r.name?.toLowerCase().replace(/\s+/g, "-") + "-restaurant" ||
+            `restaurant-${Math.random()}`
+        );
+        // Update swipeData for the API call
+        swipeData.liked = allRestaurantIds;
+        swipeData.totalSwiped = allRestaurantIds.length;
+      }
+
+      const data = await api.composeItinerary(intake, options, swipeData);
+      console.log("✅ Itinerary composed:", {
+        status: data.status,
+        hasItinerary: !!data.itinerary,
+        title: data.itinerary?.title,
+        days: data.itinerary?.days?.length,
+      });
+
+      if (data.status === "ok" && data.itinerary) {
+        // Navigate to itinerary screen with the composed itinerary
+        navigation.navigate("Itinerary", {
+          itinerary: data.itinerary,
+          meta: data.meta,
+          intake,
+          options, // Pass options data for map coordinates
+        });
+      } else {
+        throw new Error("Invalid itinerary response from API");
+      }
+    } catch (error) {
+      console.error("💥 Error composing itinerary:", error);
+      // Fallback navigation with error
+      navigation.navigate("Itinerary", {
+        itinerary: null,
+        error: error instanceof Error ? error.message : "Unknown error",
+        intake, // Pass intake data for fallback display
+        options, // Pass options data even in error case
+      });
+    }
+  };
+
   useEffect(() => {
+    // Start the API call immediately
+    composeItinerary();
+
     // Fade in animation
     fadeInValue.value = withTiming(1, { duration: 800 });
     slideUpValue.value = withTiming(0, { duration: 800 });
@@ -90,13 +174,7 @@ export default function ItineraryLoadingScreen({
     const dotsInterval = setInterval(animateDots, 1200);
     animateDots(); // Initial call
 
-    // Navigate to itinerary screen after 4 seconds
-    const timer = setTimeout(() => {
-      navigation.replace("Itinerary");
-    }, 4000);
-
     return () => {
-      clearTimeout(timer);
       clearInterval(dotsInterval);
     };
   }, [navigation]);

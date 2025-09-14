@@ -86,6 +86,7 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
                     placeholderTextColor={colors.placeholder}
                     returnKeyType="go"
                     onSubmitEditing={onSubmit}
+                    blurOnSubmit={true}
                     multiline={true}
                     onContentSizeChange={handleContentSizeChange}
                     style={[styles.searchInput, { height: inputHeight }]}
@@ -155,6 +156,7 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
+    marginBottom: -100,
   },
   content: {
     flex: 1,

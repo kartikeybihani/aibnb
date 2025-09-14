@@ -138,9 +138,6 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
     totalSwiped: 0,
   });
 
-  // Loading state for itinerary composition
-  const [isComposingItinerary, setIsComposingItinerary] = React.useState(false);
-
   // API instance
   const [api] = React.useState(() => new TravelIntakeAPI());
 
@@ -323,73 +320,12 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
 
   // API call to compose itinerary
   const composeItinerary = async () => {
-    setIsComposingItinerary(true);
-    try {
-      console.log("🎯 Calling composeItinerary with:", {
-        intake,
-        options: {
-          restaurants: options?.restaurants?.length || 0,
-          activities: options?.activities?.length || 0,
-          categories: options?.categories?.length || 0,
-        },
-        swipes: swipeData,
-      });
-
-      // Validate required data before making API call
-      if (!intake) {
-        throw new Error("No intake data available");
-      }
-
-      if (!options || !options.restaurants || !options.activities) {
-        throw new Error("Insufficient options data for itinerary creation");
-      }
-
-      if (swipeData.totalSwiped === 0) {
-        console.log(
-          "⚠️ No swipes recorded, using all available options as liked"
-        );
-        // If no swipes, assume user likes all options
-        const allRestaurantIds = options.restaurants.map(
-          (r) =>
-            r.id ||
-            r.name?.toLowerCase().replace(/\s+/g, "-") + "-restaurant" ||
-            `restaurant-${Math.random()}`
-        );
-        setSwipeData((prev) => ({
-          ...prev,
-          liked: allRestaurantIds,
-          totalSwiped: allRestaurantIds.length,
-        }));
-      }
-
-      const data = await api.composeItinerary(intake, options, swipeData);
-      console.log("✅ Itinerary composed:", {
-        status: data.status,
-        hasItinerary: !!data.itinerary,
-        title: data.itinerary?.title,
-        days: data.itinerary?.days?.length,
-      });
-
-      if (data.status === "ok" && data.itinerary) {
-        // Navigate to itinerary screen with the composed itinerary
-        navigation.navigate("Itinerary", {
-          itinerary: data.itinerary,
-          meta: data.meta,
-        });
-      } else {
-        throw new Error("Invalid itinerary response from API");
-      }
-    } catch (error) {
-      console.error("💥 Error composing itinerary:", error);
-      // Fallback navigation with error
-      navigation.navigate("Itinerary", {
-        itinerary: null,
-        error: error instanceof Error ? error.message : "Unknown error",
-        intake, // Pass intake data for fallback display
-      });
-    } finally {
-      setIsComposingItinerary(false);
-    }
+    // Navigate to ItineraryLoadingScreen first
+    navigation.navigate("ItineraryLoading", {
+      intake,
+      options,
+      swipeData,
+    });
   };
 
   const showAlert = (direction: string) => {
@@ -468,14 +404,12 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
       swipeData.totalSwiped >= availableOptions.length * 2 || // After 2 full cycles
       swipeData.totalSwiped >= 20; // Hard limit for very long lists
 
-    if (shouldComposeItinerary && !isComposingItinerary) {
+    if (shouldComposeItinerary) {
       console.log(
         `🎯 Composing itinerary after ${swipeData.totalSwiped} swipes (min required: ${minSwipesRequired})`
       );
       setTimeout(() => {
-        if (!isComposingItinerary) {
-          composeItinerary();
-        }
+        composeItinerary();
       }, 1000); // Small delay to let the animation complete
     }
 
@@ -713,11 +647,10 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
         <View style={styles.header}>
           <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
-              <Ionicons
-                name="globe-outline"
-                size={24}
-                color={colors.accent}
-                style={{ marginRight: 12 }}
+              <Image
+                source={require("../assets/images/applogo.png")}
+                style={{ width: 24, height: 24, marginRight: 12 }}
+                resizeMode="contain"
               />
               <Text style={styles.headerTitle}>AiBnB</Text>
             </View>
@@ -725,12 +658,7 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
               {swipeData.totalSwiped >= 3 && (
                 <TouchableOpacity
                   style={styles.composeButton}
-                  onPress={() => {
-                    if (!isComposingItinerary) {
-                      composeItinerary();
-                    }
-                  }}
-                  disabled={isComposingItinerary}
+                  onPress={composeItinerary}
                 >
                   <Ionicons
                     name="checkmark-circle"
@@ -1079,21 +1007,6 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
             </Animated.View>
           </GestureDetector>
         </View>
-
-        {/* Loading overlay for itinerary composition */}
-        {isComposingItinerary && (
-          <View style={styles.loadingOverlay}>
-            <View style={styles.loadingContent}>
-              <Text style={styles.loadingTitle}>Creating Your Itinerary</Text>
-              <Text style={styles.loadingSubtitle}>
-                Analyzing your preferences and crafting the perfect trip...
-              </Text>
-              <View style={styles.loadingAnimation}>
-                <Text style={styles.loadingDots}>•••</Text>
-              </View>
-            </View>
-          </View>
-        )}
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -1385,51 +1298,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.subtext,
     textAlign: "center",
-  },
-  loadingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 1000,
-  },
-  loadingContent: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 32,
-    alignItems: "center",
-    maxWidth: screenWidth - 60,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 16,
-  },
-  loadingTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.text,
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  loadingSubtitle: {
-    fontSize: 14,
-    color: colors.subtext,
-    textAlign: "center",
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  loadingAnimation: {
-    alignItems: "center",
-  },
-  loadingDots: {
-    fontSize: 24,
-    color: colors.accent,
-    fontWeight: "bold",
-    letterSpacing: 4,
   },
 });
