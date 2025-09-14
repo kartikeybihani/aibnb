@@ -143,30 +143,82 @@ module.exports = async function handler(req, res) {
     const cityFallback = intake.destinations[0]?.city || "City";
     const scaled = scaleCounts(intake, counts);
 
-    // Build prompt and call Anthropic JSON mode
+    // Build prompt and call Anthropic JSON mode with retry logic
     const system = systemPrompt();
     const user = userPrompt(intake, scaled);
 
-    const msg = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
-      max_tokens: 4000,
-      system,
-      messages: [{ role: "user", content: user }],
-    });
+    let json = {};
+    let rawText = "{}";
+    let lastError = null;
 
-    const rawText = msg?.content?.[0]?.text || "{}";
-    console.log("Raw AI response:", rawText);
-    const json = tryParseJson(rawText);
-    console.log("Parsed JSON:", JSON.stringify(json, null, 2));
+    // Try with increasing token limits and retries
+    const attempts = [
+      { max_tokens: 8000, retries: 2 },
+      { max_tokens: 12000, retries: 1 },
+      { max_tokens: 16000, retries: 1 },
+    ];
 
-    // If the response is empty or invalid, throw an error to trigger fallback
+    for (const attempt of attempts) {
+      for (let retry = 0; retry <= attempt.retries; retry++) {
+        try {
+          console.log(
+            `Attempt: max_tokens=${attempt.max_tokens}, retry=${retry}`
+          );
+
+          const msg = await anthropic.messages.create({
+            model: "claude-3-5-haiku-20241022",
+            max_tokens: attempt.max_tokens,
+            system,
+            messages: [{ role: "user", content: user }],
+          });
+
+          rawText = msg?.content?.[0]?.text || "{}";
+          console.log(`Raw AI response length: ${rawText.length} chars`);
+
+          json = tryParseJson(rawText);
+
+          // Check if we got a valid response with required structure
+          if (
+            json &&
+            (json.categories || json.restaurants || json.activities)
+          ) {
+            console.log("Successfully parsed JSON with content");
+            break;
+          } else {
+            throw new Error("Empty or incomplete response structure");
+          }
+        } catch (error) {
+          lastError = error;
+          console.log(`Attempt failed: ${error.message}`);
+
+          if (retry < attempt.retries) {
+            // Wait before retry (exponential backoff)
+            const delay = Math.pow(2, retry) * 1000;
+            console.log(`Waiting ${delay}ms before retry...`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
+      }
+
+      // If we got valid content, break out of attempts loop
+      if (json && (json.categories || json.restaurants || json.activities)) {
+        break;
+      }
+    }
+
+    console.log("Final parsed JSON keys:", Object.keys(json));
+
+    // If the response is empty or invalid after all attempts, throw an error to trigger fallback
     if (
       !rawText ||
       rawText.trim() === "" ||
       rawText === "{}" ||
       Object.keys(json).length === 0
     ) {
-      throw new Error("Empty or invalid AI response");
+      const errorMsg = lastError
+        ? `AI response failed: ${lastError.message}`
+        : "Empty or invalid AI response after all retry attempts";
+      throw new Error(errorMsg);
     }
 
     // Ensure required fields exist
@@ -371,34 +423,69 @@ function tryParseJson(txt) {
     console.log("JSON parse error:", error.message);
     console.log("Attempting to fix truncated JSON...");
 
-    // Try to find the last complete object/array and parse that
-    const m = txt.match(/\{[\s\S]*\}/);
-    if (m) {
-      try {
-        return JSON.parse(m[0]);
-      } catch (e) {
-        console.log("Still failed to parse, trying to fix truncated JSON...");
+    // Try to find the main JSON object
+    const match = txt.match(/\{[\s\S]*$/);
+    if (!match) {
+      console.log("No JSON object found in response");
+      return {};
+    }
 
-        // Try to fix common truncation issues
-        let fixed = m[0];
+    let jsonStr = match[0];
 
-        // If it ends with a quote, try to close it
-        if (fixed.match(/"[^"]*$/)) {
-          fixed = fixed.replace(/"[^"]*$/, '""');
+    // Multiple repair strategies
+    const repairStrategies = [
+      // Strategy 1: Simple cleanup
+      (str) => {
+        let fixed = str;
+        // Remove trailing incomplete strings
+        fixed = fixed.replace(/"[^"]*$/, '""');
+        // Remove trailing commas
+        fixed = fixed.replace(/,(\s*[}\]])/, "$1");
+        // Remove incomplete property names
+        fixed = fixed.replace(/,\s*"[^"]*$/, "");
+        return fixed;
+      },
+
+      // Strategy 2: Find last complete structure
+      (str) => {
+        // Find the last complete object or array by looking for balanced braces
+        let depth = 0;
+        let lastValidPos = -1;
+
+        for (let i = 0; i < str.length; i++) {
+          const char = str[i];
+          if (char === "{" || char === "[") {
+            depth++;
+          } else if (char === "}" || char === "]") {
+            depth--;
+            if (depth === 0) {
+              lastValidPos = i;
+            }
+          }
         }
 
-        // If it ends with a comma, remove it
-        if (fixed.match(/,\s*$/)) {
-          fixed = fixed.replace(/,\s*$/, "");
+        if (lastValidPos > 0) {
+          return str.substring(0, lastValidPos + 1);
         }
+        return str;
+      },
 
-        // Try to close any open arrays/objects
+      // Strategy 3: Aggressive closing
+      (str) => {
+        let fixed = str;
+
+        // Remove any trailing incomplete content
+        fixed = fixed.replace(/,\s*$/, "");
+        fixed = fixed.replace(/"[^"]*$/, '""');
+        fixed = fixed.replace(/:\s*$/, ': ""');
+
+        // Count and balance braces/brackets
         const openBraces = (fixed.match(/\{/g) || []).length;
         const closeBraces = (fixed.match(/\}/g) || []).length;
         const openBrackets = (fixed.match(/\[/g) || []).length;
         const closeBrackets = (fixed.match(/\]/g) || []).length;
 
-        // Add missing closing brackets
+        // Add missing closing brackets first
         for (let i = 0; i < openBrackets - closeBrackets; i++) {
           fixed += "]";
         }
@@ -408,14 +495,41 @@ function tryParseJson(txt) {
           fixed += "}";
         }
 
-        try {
-          return JSON.parse(fixed);
-        } catch (e2) {
-          console.log("Still failed after fixing:", e2.message);
-          return {};
-        }
+        return fixed;
+      },
+    ];
+
+    // Try each repair strategy
+    for (let i = 0; i < repairStrategies.length; i++) {
+      try {
+        const repaired = repairStrategies[i](jsonStr);
+        console.log(`Trying repair strategy ${i + 1}...`);
+        const result = JSON.parse(repaired);
+        console.log(`Strategy ${i + 1} succeeded!`);
+        return result;
+      } catch (e) {
+        console.log(`Strategy ${i + 1} failed:`, e.message);
+        continue;
       }
     }
+
+    // If all strategies fail, try to extract at least categories
+    console.log(
+      "All repair strategies failed, attempting partial extraction..."
+    );
+    try {
+      const categoriesMatch = jsonStr.match(/"categories"\s*:\s*\[[\s\S]*?\]/);
+      if (categoriesMatch) {
+        const partialJson = `{${categoriesMatch[0]}}`;
+        const result = JSON.parse(partialJson);
+        console.log("Partial extraction successful - got categories");
+        return result;
+      }
+    } catch (e) {
+      console.log("Partial extraction also failed:", e.message);
+    }
+
+    console.log("All JSON repair attempts failed, returning empty object");
     return {};
   }
 }
