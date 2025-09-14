@@ -14,7 +14,7 @@ const IntakeSchema = z.object({
   destinations: z
     .array(
       z.object({
-        city: z.string().min(1),
+        city: z.string().min(1).optional(),
         region: z.string().optional(),
         country: z.string().optional(),
       })
@@ -93,7 +93,7 @@ module.exports = async function handler(req, res) {
     console.log(`🔄 [${requestId}] Processing request:`, {
       userText:
         userText?.substring(0, 100) + (userText?.length > 100 ? "..." : ""),
-      partialIntake,
+      partialIntake: JSON.stringify(partialIntake, null, 2),
       sessionId,
     });
 
@@ -408,7 +408,7 @@ function safeParse(schema, value) {
     if (r2.success) return r2.data;
 
     // If still failing, return the cleaned value without validation
-    console.warn("Zod validation failed, returning unvalidated data:", r.error);
+    console.log("Zod validation failed, returning unvalidated data:", r.error);
     return cleanedValue;
   } catch (error) {
     console.error("Error in safeParse:", error);
@@ -418,8 +418,8 @@ function safeParse(schema, value) {
 
 function processIntake(partialIntake, extracted, sessionId, res, requestId) {
   console.log(`🔄 [${requestId}] Processing intake:`, {
-    partialIntake,
-    extracted,
+    partialIntake: JSON.stringify(partialIntake, null, 2),
+    extracted: JSON.stringify(extracted, null, 2),
     sessionId,
   });
 
@@ -427,7 +427,7 @@ function processIntake(partialIntake, extracted, sessionId, res, requestId) {
   const missing = findMissing(merged);
 
   console.log(`📊 [${requestId}] Intake analysis:`, {
-    merged,
+    merged: JSON.stringify(merged, null, 2),
     missing,
     hasDestinations: !!merged.destinations?.length,
     hasDates: !!(merged.dates?.start && merged.dates?.end),
