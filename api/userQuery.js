@@ -2,8 +2,8 @@
 // Node 18 on Vercel
 // npm i @anthropic-ai/sdk zod
 
-import Anthropic from "@anthropic-ai/sdk";
-import { z } from "zod";
+const Anthropic = require("@anthropic-ai/sdk").default;
+const { z } = require("zod");
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 //
@@ -58,7 +58,7 @@ const REQUIRED_KEYS = [
 ];
 
 // ----- HTTP handler -----
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
     if (req.method !== "POST") {
       res.status(405).json({ error: "POST only" });
@@ -125,7 +125,7 @@ export default async function handler(req, res) {
     console.error(err);
     res.status(500).json({ error: String(err?.message || err) });
   }
-}
+};
 
 // ----- Anthropic extraction -----
 async function extractIntakeFromText(userText) {
