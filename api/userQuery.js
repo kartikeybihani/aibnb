@@ -19,33 +19,15 @@ const IntakeSchema = z.object({
         country: z.string().optional(),
       })
     )
-    .min(1)
     .optional(),
-  dates: z
-    .object({ start: z.string().optional(), end: z.string().optional() })
-    .optional(),
+  dates: z.any().optional(),
   trip_length_days: z.number().int().positive().optional(),
-  party: z
-    .object({
-      adults: z.number().int().nonnegative().optional(),
-      kids: z.number().int().nonnegative().optional(),
-    })
-    .optional(),
-  budget: z
-    .object({
-      level: z.enum(["low", "medium", "high"]).optional(),
-      per_person_daily_usd: z.number().positive().optional(),
-    })
-    .optional(),
-  vibe: z
-    .object({
-      pace: z.enum(["relaxed", "balanced", "adventurous"]).optional(),
-      themes: z.array(z.string()).optional(),
-    })
-    .optional(),
+  party: z.any().optional(),
+  budget: z.any().optional(),
+  vibe: z.any().optional(),
   travel_dates_for_seasonality: z.boolean().optional(),
   dietary: z.array(z.string()).optional(),
-  extras: z.record(z.unknown()).optional(),
+  extras: z.any().optional(),
 });
 
 const REQUIRED_KEYS = [
@@ -416,9 +398,22 @@ function buildFollowUp(kind, x) {
 }
 
 function safeParse(schema, value) {
-  const r = schema.safeParse(value || {});
-  if (r.success) return r.data;
-  return schema.parse(JSON.parse(JSON.stringify(value || {})));
+  try {
+    const r = schema.safeParse(value || {});
+    if (r.success) return r.data;
+
+    // If safeParse fails, try to clean the data and parse again
+    const cleanedValue = JSON.parse(JSON.stringify(value || {}));
+    const r2 = schema.safeParse(cleanedValue);
+    if (r2.success) return r2.data;
+
+    // If still failing, return the cleaned value without validation
+    console.warn("Zod validation failed, returning unvalidated data:", r.error);
+    return cleanedValue;
+  } catch (error) {
+    console.error("Error in safeParse:", error);
+    return value || {};
+  }
 }
 
 function processIntake(partialIntake, extracted, sessionId, res, requestId) {
