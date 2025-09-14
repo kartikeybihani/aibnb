@@ -1,12 +1,11 @@
 // api/userQuery.js
-// Node 18 on Vercel
-// npm i @anthropic-ai/sdk zod
+// Node 18 on Vercel (ESM)
 
-const Anthropic = require("@anthropic-ai/sdk").default;
-const { z } = require("zod");
+import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-//
+
 // ----- Types with Zod to validate intake coming from the model -----
 const IntakeSchema = z.object({
   destinations: z
@@ -18,12 +17,9 @@ const IntakeSchema = z.object({
       })
     )
     .min(1)
-    .optional(), // allow missing before merge
+    .optional(),
   dates: z
-    .object({
-      start: z.string().optional(), // ISO yyyy-mm-dd
-      end: z.string().optional(),
-    })
+    .object({ start: z.string().optional(), end: z.string().optional() })
     .optional(),
   trip_length_days: z.number().int().positive().optional(),
   party: z
@@ -55,91 +51,38 @@ const REQUIRED_KEYS = [
   "party_size",
   "budget",
   "vibe",
-];
+]; // not used, OK to remove
 
-// ----- HTTP handler -----
-module.exports = function (req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "POST only" });
     return;
   }
 
-  var body = req.body || {};
-  var userText = body.userText; // string with the users message
-  var partialIntake = body.partialIntake; // optional Intake gathered so far
-  var sessionId = body.sessionId; // optional string for your own tracking
+  const body = req.body || {};
+  const userText = body.userText;
+  const partialIntake = body.partialIntake;
+  const sessionId = body.sessionId;
 
   if (!userText && !partialIntake) {
     res.status(400).json({ error: "Provide userText or partialIntake" });
     return;
   }
 
-  // 1 Extract a fresh Intake from the new user text using Anthropic
-  if (userText) {
-    extractIntakeFromText(userText, function (err, extracted) {
-      if (err) {
-        console.error(err);
-        res.status(500).json({ error: String(err.message || err) });
-        return;
-      }
-
-      processIntake(partialIntake || {}, extracted, sessionId, res);
-    });
-  } else {
-    processIntake(partialIntake || {}, {}, sessionId, res);
-  }
-};
-
-function processIntake(partialIntake, extracted, sessionId, res) {
   try {
-    // 2 Merge with whatever the client already had
-    var merged = normalizeIntake(deepMergeIntake(partialIntake, extracted));
-
-    // 3 Decide if we can proceed or need a follow up
-    var missing = findMissing(merged);
-
-    // 4 Special multi city day split suggestion
-    var extraFollowUp = null;
-    if (
-      !missing.length &&
-      Array.isArray(merged.destinations) &&
-      merged.destinations.length > 1 &&
-      !(merged.extras && merged.extras.day_split)
-    ) {
-      extraFollowUp = {
-        question:
-          "Do you want to split days across cities or should I spread them evenly",
-        chips: ["Even split", "Rome 3 Florence 2 Venice 3", "I will specify"],
-      };
+    let extracted = {};
+    if (userText) {
+      extracted = await extractIntakeFromText(userText);
     }
-
-    if (!missing.length && !extraFollowUp) {
-      res.status(200).json({
-        status: "ready",
-        sessionId: sessionId,
-        intake: merged,
-      });
-      return;
-    }
-
-    var followUp = extraFollowUp || buildFollowUp(missing[0], merged);
-
-    res.status(200).json({
-      status: "need_follow_up",
-      sessionId: sessionId,
-      partial: merged,
-      follow_up: followUp,
-    });
+    processIntake(partialIntake || {}, extracted || {}, sessionId, res);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: String(err.message || err) });
+    res.status(500).json({ error: String(err?.message || err) });
   }
 }
 
-// ----- Anthropic extraction -----
-function extractIntakeFromText(userText, callback) {
-  // Ask Claude to strictly emit JSON matching our shape
-  var system =
+async function extractIntakeFromText(userText) {
+  const system =
     "You are a travel intake parser.\n" +
     "Return strictly valid JSON that matches this TypeScript shape:\n\n" +
     "type Intake = {\n" +
@@ -166,50 +109,38 @@ function extractIntakeFromText(userText, callback) {
     "- Dates must be ISO yyyy-mm-dd when present\n" +
     "- Put anything that does not fit a known field into extras";
 
-  var jsonSchema = {
+  const jsonSchema = {
     name: "IntakeExtraction",
     schema: {
       type: "object",
       additionalProperties: false,
       properties: IntakeJsonSchemaProps(),
-      required: [], // we allow partial and will merge and validate later
+      required: [],
     },
   };
 
-  anthropic.messages
-    .create({
-      model: "claude-3-5-sonnet-20240620",
-      max_tokens: 1200,
-      system: system,
-      response_format: { type: "json_schema", json_schema: jsonSchema },
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text:
-                "Extract an Intake from this message. Return only the JSON object.\n\n" +
-                userText,
-            },
-          ],
-        },
-      ],
-    })
-    .then(function (msg) {
-      var txt =
-        (msg && msg.content && msg.content[0] && msg.content[0].text) || "{}";
-      try {
-        // Validate and coerce to our Intake shape
-        var parsed = safeParse(IntakeSchema, JSON.parse(txt));
-        callback(null, parsed);
-      } catch (err) {
-        callback(err, {});
-      }
-    })
-    .catch(function (err) {
-      callback(err, {});
-    });
+  const msg = await anthropic.messages.create({
+    model: "claude-3-5-sonnet-20240620",
+    max_tokens: 1200,
+    system,
+    response_format: { type: "json_schema", json_schema: jsonSchema },
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              "Extract an Intake from this message. Return only the JSON object.\n\n" +
+              userText,
+          },
+        ],
+      },
+    ],
+  });
+
+  const txt = msg?.content?.[0]?.text || "{}";
+  return safeParse(IntakeSchema, JSON.parse(txt));
 }
 
 // ----- Utility: schema for Anthropic JSON mode -----
@@ -231,19 +162,13 @@ function IntakeJsonSchemaProps() {
     dates: {
       type: "object",
       additionalProperties: false,
-      properties: {
-        start: { type: "string" },
-        end: { type: "string" },
-      },
+      properties: { start: { type: "string" }, end: { type: "string" } },
     },
     trip_length_days: { type: "number" },
     party: {
       type: "object",
       additionalProperties: false,
-      properties: {
-        adults: { type: "number" },
-        kids: { type: "number" },
-      },
+      properties: { adults: { type: "number" }, kids: { type: "number" } },
     },
     budget: {
       type: "object",
@@ -258,21 +183,12 @@ function IntakeJsonSchemaProps() {
       additionalProperties: false,
       properties: {
         pace: { type: "string", enum: ["relaxed", "balanced", "adventurous"] },
-        themes: {
-          type: "array",
-          items: { type: "string" },
-        },
+        themes: { type: "array", items: { type: "string" } },
       },
     },
     travel_dates_for_seasonality: { type: "boolean" },
-    dietary: {
-      type: "array",
-      items: { type: "string" },
-    },
-    extras: {
-      type: "object",
-      additionalProperties: true,
-    },
+    dietary: { type: "array", items: { type: "string" } },
+    extras: { type: "object", additionalProperties: true },
   };
 }
 
@@ -280,8 +196,8 @@ function IntakeJsonSchemaProps() {
 function deepMergeIntake(base, add) {
   base = base || {};
   add = add || {};
-  var out = JSON.parse(JSON.stringify(base));
-  var put = function (k, v) {
+  const out = JSON.parse(JSON.stringify(base));
+  const put = (k, v) => {
     if (v === undefined || v === null) return;
     if (Array.isArray(v)) {
       out[k] = v.length ? v : out[k];
@@ -291,138 +207,135 @@ function deepMergeIntake(base, add) {
       out[k] = v;
     }
   };
-  var entries = Object.keys(add);
-  for (var i = 0; i < entries.length; i++) {
-    var k = entries[i];
-    put(k, add[k]);
-  }
-  // ensure arrays exist
-  if (out.destinations && !Array.isArray(out.destinations)) {
+  for (const k of Object.keys(add)) put(k, add[k]);
+  if (out.destinations && !Array.isArray(out.destinations))
     out.destinations = [out.destinations];
-  }
   if (!out.extras) out.extras = {};
   return out;
 }
 
 function normalizeIntake(intake) {
-  var x = JSON.parse(JSON.stringify(intake || {}));
-  // derive trip_length_days from dates if possible
+  const x = JSON.parse(JSON.stringify(intake || {}));
   if (
     (!x.trip_length_days || x.trip_length_days <= 0) &&
-    x.dates &&
-    x.dates.start &&
-    x.dates &&
-    x.dates.end
+    x.dates?.start &&
+    x.dates?.end
   ) {
-    var days = diffDaysISO(x.dates.start, x.dates.end);
+    const days = diffDaysISO(x.dates.start, x.dates.end);
     if (days > 0) {
       x.trip_length_days = days;
       x.travel_dates_for_seasonality = true;
     }
   }
-  // map budget synonyms inside extras if present
-  if (x.budget && x.budget.level) {
-    var map = {
+  if (x.budget?.level) {
+    const map = {
       cheap: "low",
       student: "low",
       affordable: "low",
       upscale: "high",
       luxury: "high",
     };
-    var lv = x.budget.level.toLowerCase();
+    const lv = x.budget.level.toLowerCase();
     if (map[lv]) x.budget.level = map[lv];
   }
-  // trim themes
-  if (x.vibe && x.vibe.themes) {
-    var themes = x.vibe.themes
-      .map(function (t) {
-        return String(t).toLowerCase().trim();
-      })
-      .filter(function (t) {
-        return Boolean(t);
-      });
-    var uniqueThemes = [];
-    for (var i = 0; i < themes.length; i++) {
-      if (uniqueThemes.indexOf(themes[i]) === -1) {
-        uniqueThemes.push(themes[i]);
-      }
-    }
-    x.vibe.themes = uniqueThemes;
+  if (x.vibe?.themes) {
+    const themes = x.vibe.themes
+      .map((t) => String(t).toLowerCase().trim())
+      .filter(Boolean);
+    x.vibe.themes = Array.from(new Set(themes));
   }
   return safeParse(IntakeSchema, x);
 }
 
 function diffDaysISO(a, b) {
   try {
-    var d1 = new Date(a + "T00:00:00Z");
-    var d2 = new Date(b + "T00:00:00Z");
-    var ms = d2 - d1;
-    var days = Math.round(ms / 86400000);
-    return days;
-  } catch (e) {
+    const d1 = new Date(a + "T00:00:00Z");
+    const d2 = new Date(b + "T00:00:00Z");
+    return Math.round((d2 - d1) / 86400000);
+  } catch {
     return 0;
   }
 }
 
 function findMissing(x) {
-  var misses = [];
-  if (!x.destinations || !x.destinations.length) misses.push("destinations");
-
-  var hasDates = !!(x.dates && x.dates.start && x.dates && x.dates.end);
-  var hasDays = Number.isFinite(x.trip_length_days) && x.trip_length_days > 0;
+  const misses = [];
+  if (!x.destinations?.length) misses.push("destinations");
+  const hasDates = !!(x.dates?.start && x.dates?.end);
+  const hasDays = Number.isFinite(x.trip_length_days) && x.trip_length_days > 0;
   if (!hasDates && !hasDays) misses.push("trip_length_or_dates");
-
-  var adults = x.party && x.party.adults;
+  const adults = x.party?.adults;
   if (!(Number.isFinite(adults) && adults > 0)) misses.push("party_size");
-
-  var hasBudget =
+  const hasBudget =
     (x.budget && x.budget.level) ||
     (x.budget && Number.isFinite(x.budget.per_person_daily_usd));
   if (!hasBudget) misses.push("budget");
-
-  var pace = x.vibe && x.vibe.pace;
-  if (!pace) misses.push("vibe");
-
+  if (!x.vibe?.pace) misses.push("vibe");
   return misses;
 }
 
 function buildFollowUp(kind, x) {
-  if (kind === "destinations") {
+  if (kind === "destinations")
     return {
       question: "Where are you going",
       chips: ["Tokyo", "Kyoto", "Osaka", "Rome", "Florence", "Venice"],
     };
-  }
-  if (kind === "trip_length_or_dates") {
+  if (kind === "trip_length_or_dates")
     return {
       question: "How long is the trip or what are the exact dates",
       chips: ["3 days", "5 days", "7 days", "Enter dates"],
     };
-  }
-  if (kind === "party_size") {
+  if (kind === "party_size")
     return {
       question: "How many people are going adults and kids",
       chips: ["Solo", "Two adults", "Two adults one kid", "Four adults"],
     };
-  }
-  if (kind === "budget") {
+  if (kind === "budget")
     return {
       question: "What budget level should I plan for or daily spend per person",
       chips: ["Low", "Medium", "High"],
     };
-  }
-  if (kind === "vibe") {
+  if (kind === "vibe")
     return {
       question: "What vibe fits best",
       chips: ["Relaxed", "Balanced", "Adventurous"],
     };
-  }
   return { question: "Any other key detail", chips: [] };
 }
 
 function safeParse(schema, value) {
-  var r = schema.safeParse(value || {});
+  const r = schema.safeParse(value || {});
   if (r.success) return r.data;
-  // if model sends extras we cannot validate ignore errors by pruning unknowns
   return schema.parse(JSON.parse(JSON.stringify(value || {})));
+}
+
+function processIntake(partialIntake, extracted, sessionId, res) {
+  const merged = normalizeIntake(deepMergeIntake(partialIntake, extracted));
+  const missing = findMissing(merged);
+
+  let extraFollowUp = null;
+  if (
+    !missing.length &&
+    Array.isArray(merged.destinations) &&
+    merged.destinations.length > 1 &&
+    !(merged.extras && merged.extras.day_split)
+  ) {
+    extraFollowUp = {
+      question:
+        "Do you want to split days across cities or should I spread them evenly",
+      chips: ["Even split", "Rome 3 Florence 2 Venice 3", "I will specify"],
+    };
+  }
+
+  if (!missing.length && !extraFollowUp) {
+    res.status(200).json({ status: "ready", sessionId, intake: merged });
+    return;
+  }
+
+  const followUp = extraFollowUp || buildFollowUp(missing[0], merged);
+  res.status(200).json({
+    status: "need_follow_up",
+    sessionId,
+    partial: merged,
+    follow_up: followUp,
+  });
 }

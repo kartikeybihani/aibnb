@@ -1,6 +1,7 @@
 {
   "name": "hacker",
   "main": "index.tsx",
+  "type": "module",
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
