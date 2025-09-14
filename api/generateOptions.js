@@ -159,6 +159,16 @@ module.exports = async function handler(req, res) {
     const json = tryParseJson(rawText);
     console.log("Parsed JSON:", JSON.stringify(json, null, 2));
 
+    // If the response is empty or invalid, throw an error to trigger fallback
+    if (
+      !rawText ||
+      rawText.trim() === "" ||
+      rawText === "{}" ||
+      Object.keys(json).length === 0
+    ) {
+      throw new Error("Empty or invalid AI response");
+    }
+
     // Ensure required fields exist
     if (!json.categories) {
       json.categories = [];
