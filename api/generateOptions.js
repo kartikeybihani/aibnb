@@ -118,12 +118,29 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: "POST only" });
 
   try {
+    console.log("🚀 GenerateOptions API called");
+    console.log("📝 Request body keys:", Object.keys(req.body || {}));
+
+    // Check environment
+    const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+    console.log("🔑 Anthropic API key present:", hasApiKey);
+    if (!hasApiKey) {
+      console.error("❌ ANTHROPIC_API_KEY not found in environment");
+    }
+
     const { intake, counts } = req.body || {};
+    console.log("📊 Received counts:", counts);
+    console.log(
+      "🎯 Intake destinations:",
+      intake?.destinations?.map((d) => d.city)
+    );
+
     if (
       !intake ||
       !Array.isArray(intake.destinations) ||
       !intake.destinations.length
     ) {
+      console.error("❌ Invalid intake data");
       return res
         .status(400)
         .json({ error: "intake with at least one destination is required" });
@@ -140,29 +157,41 @@ module.exports = async function handler(req, res) {
     let rawText = "{}";
     let lastError = null;
 
-    // Try with increasing token limits and retries
+    // Try with valid token limits for Claude-3.5-Haiku (max 8192)
     const attempts = [
-      { max_tokens: 8000, retries: 2 },
-      { max_tokens: 12000, retries: 1 },
-      { max_tokens: 16000, retries: 1 },
+      { max_tokens: 6000, retries: 2 }, // Conservative first attempt
+      { max_tokens: 7500, retries: 1 }, // Higher but safe
+      { max_tokens: 8000, retries: 1 }, // Near maximum
     ];
+
+    console.log("🤖 Starting AI generation attempts...");
+    console.log("📋 Scaled counts requested:", scaled);
 
     for (const attempt of attempts) {
       for (let retry = 0; retry <= attempt.retries; retry++) {
         try {
           console.log(
-            `Attempt: max_tokens=${attempt.max_tokens}, retry=${retry}`
+            `🔄 Attempt: max_tokens=${attempt.max_tokens}, retry=${retry}`
           );
 
+          console.log("📡 Calling Anthropic API...");
           const msg = await anthropic.messages.create({
             model: "claude-3-5-haiku-20241022",
             max_tokens: attempt.max_tokens,
             system,
             messages: [{ role: "user", content: user }],
           });
+          console.log("✅ Anthropic API call successful");
 
           rawText = msg?.content?.[0]?.text || "{}";
-          console.log(`Raw AI response length: ${rawText.length} chars`);
+          console.log(`📏 Raw AI response length: ${rawText.length} chars`);
+
+          // Check if response is too long and might be truncated
+          if (rawText.length > 20000) {
+            console.warn(
+              `⚠️ Response very long (${rawText.length} chars), may be truncated`
+            );
+          }
 
           json = tryParseJson(rawText);
 
@@ -178,12 +207,14 @@ module.exports = async function handler(req, res) {
           }
         } catch (error) {
           lastError = error;
-          console.log(`Attempt failed: ${error.message}`);
+          console.error(`💥 Attempt failed:`, error.message);
+          console.error("Error type:", error.name);
+          console.error("Full error:", error);
 
           if (retry < attempt.retries) {
             // Wait before retry (exponential backoff)
             const delay = Math.pow(2, retry) * 1000;
-            console.log(`Waiting ${delay}ms before retry...`);
+            console.log(`⏳ Waiting ${delay}ms before retry...`);
             await new Promise((resolve) => setTimeout(resolve, delay));
           }
         }
@@ -247,6 +278,9 @@ module.exports = async function handler(req, res) {
       const errorMsg = lastError
         ? `AI response failed: ${lastError.message}`
         : "Empty or invalid AI response after all retry attempts";
+      console.error("🚨 Triggering fallback due to:", errorMsg);
+      console.error("Raw text length:", rawText?.length || 0);
+      console.error("JSON keys:", Object.keys(json || {}));
       throw new Error(errorMsg);
     }
 
@@ -300,13 +334,22 @@ module.exports = async function handler(req, res) {
       },
     });
   } catch (err) {
+    console.error("🚨 MAJOR ERROR - Using Fallback Data!");
     console.error("generateOptions error:", err);
     console.error("Error details:", {
       message: err?.message,
       name: err?.name,
       stack: err?.stack,
     });
+    console.warn(
+      "🔄 Building fallback data with hardcoded Tokyo restaurants..."
+    );
     const fallback = buildFallback();
+    console.log("📤 Sending fallback data:", {
+      restaurants: fallback.restaurants?.length || 0,
+      activities: fallback.activities?.length || 0,
+      categories: fallback.categories?.length || 0,
+    });
     res.status(200).json({
       status: "ok",
       options: fallback,
@@ -342,88 +385,38 @@ Typing rules
 
 function userPrompt(intake, scaled) {
   return `
-Intake
-${JSON.stringify(intake, null, 2)}
+Generate ${scaled.restaurants} restaurants and ${
+    scaled.activities
+  } activities for ${intake.destinations.map((d) => d.city).join(", ")}.
+Trip: ${scaled.days} days, ${intake.party?.adults || 2} adults, ${
+    intake.budget?.level || "medium"
+  } budget.
 
-Output schema example
+JSON format:
 {
   "categories": [
-    { "name": "Accommodations", "type": "accommodations", "description": "Places to stay", "examples": [ExampleItem x4] },
-    { "name": "Dining", "type": "dining", "description": "Restaurant and food options", "examples": [ExampleItemDining x4] },
-    { "name": "Activities", "type": "activities", "description": "Things to do and experiences", "examples": [ExampleItemActivity x4] },
-    // Choose two to four more that fit the Intake best, each with exactly 4 examples.
-    // Transportation, Neighborhoods, Nightlife, Shopping, Cultural Experiences, Outdoor Adventures,
-    // Relaxation, Entertainment, Local Markets, Wellness, Photography Spots, Family Activities,
-    // Budget Options, Luxury Experiences
-    {OptionalCategory}...
+    {"name": "Dining", "type": "dining", "examples": [{"name": "Restaurant Name", "metadata": {"cuisine": "Italian", "price_range": "$"}}]},
+    {"name": "Activities", "type": "activities", "examples": [{"name": "Museum Name", "metadata": {"type": "museum"}}]},
+    {"name": "Nightlife", "type": "nightlife", "examples": [{"name": "Bar Name", "metadata": {"type": "bar"}}]}
   ],
+  "restaurants": [
+    {"id": "rest-1", "kind": "restaurant", "title": "Restaurant Name", "city": "City", "cuisine": "Italian", "meal_type": "dinner", "tags": ["romantic"], "rating_hint": 0.8, "source": "ai"}
+  ],
+  "activities": [
+    {"id": "act-1", "kind": "activity", "title": "Activity Name", "city": "City", "category": "museum", "tags": ["cultural"], "rating_hint": 0.8, "source": "ai"}
+  ],
+  "guardrails": {"dont_repeat_restaurants": true, "max_same_cuisine_per_trip": 2, "max_commute_min_per_leg": 30}
+}
 
-  "restaurants": Restaurant[],   // EXACTLY ${
+CRITICAL: restaurants array must have exactly ${
     scaled.restaurants
-  } unique restaurants across all cities - CRITICAL: Must provide full count
-  "activities": Activity[],      // EXACTLY ${
-    scaled.activities
-  } unique activities across all cities - CRITICAL: Must provide full count
-
-  "guardrails": {
-    "dont_repeat_restaurants": true,
-    "max_same_cuisine_per_trip": 2,
-    "max_commute_min_per_leg": 30
-  }
-}
-
-Types
-ExampleItem = {
-  "id": "string",
-  "name": "Specific name",
-  "description": "One or two sentences",
-  "image_url": null,
-  "metadata": {
-    "city": "City",
-    "country": "Country",
-    "location": "Neighborhood",
-    "price_range": "$|$$|$$$|$$$$",
-    "rating_hint": 0.0,
-    "tags": ["strings"],
-    "lat": 0, "lng": 0
-  }
-}
-ExampleItemDining extends ExampleItem with {
-  "metadata": { "cuisine": "Ramen", "meal_type": "breakfast|lunch|dinner|snack", "amenities": ["reservation recommended"] }
-}
-ExampleItemActivity extends ExampleItem with {
-  "metadata": { "type": "outdoor|museum|tour|shopping|nightlife|class", "duration": "2 hours|half day|120 min", "difficulty": "easy|moderate|challenging", "best_time": "morning|afternoon|evening|anytime", "ticket_required": true }
-}
-Restaurant = {
-  "id": "string", "kind": "restaurant", "title": "name", "city": "City", "country": "Country",
-  "lat": 0, "lng": 0, "cuisine": "string", "meal_type": "breakfast|lunch|dinner|snack",
-  "tags": ["strings"], "est_cost_per_person": 0, "est_duration_min": 0, "rating_hint": 0.0, "source": "ai"
-}
-Activity = {
-  "id": "string", "kind": "activity", "title": "name", "city": "City", "country": "Country",
-  "lat": 0, "lng": 0, "category": "outdoor|museum|tour|shopping|nightlife|class",
-  "tags": ["strings"], "est_cost_per_person": 0, "est_duration_min": 0, "rating_hint": 0.0,
-  "ticket_required": false, "time_windows": [{ "start": "09:00", "end": "12:00" }], "source": "ai"
-}
-
-Constraints
-- CRITICAL: Must produce EXACTLY ${
-    scaled.restaurants
-  } unique restaurants and EXACTLY ${
-    scaled.activities
-  } unique activities in the restaurants and activities arrays. This is not optional.
-- Always include the three required categories. Each category must have exactly 4 examples.
-- The restaurants array must be completely separate from category examples and contain the full count.
-- The activities array must be completely separate from category examples and contain the full count.
-- No duplicate names within 200 meters. Vary cuisines and categories. Respect dietary.
-- If you are unsure about coords, omit them.
-- Focus on quality and variety - spread across different neighborhoods and price ranges.
-
-IMPORTANT: The user is requesting ${scaled.restaurants} restaurants and ${
-    scaled.activities
-  } activities for a ${
-    scaled.days
-  }-day trip. You MUST provide exactly these counts in the main arrays. Return ONLY the JSON object. Do not include any explanatory text, markdown formatting, or other content.
+  } items, activities array must have exactly ${scaled.activities} items.
+Use real places in ${intake.destinations
+    .map((d) => d.city)
+    .join(
+      ", "
+    )}. Mix meal types (breakfast/lunch/dinner/snack). Mix categories (outdoor/museum/tour/shopping/nightlife/class).
+Return only JSON, no explanation.
 `.trim();
 }
 
@@ -434,15 +427,17 @@ function scaleCounts(intake, counts) {
     intake.trip_length_days ||
     diffDays(intake?.dates?.start, intake?.dates?.end) ||
     5;
+
+  // More conservative scaling to reduce token usage
   const restaurants = clamp(
-    counts?.restaurants ?? Math.round(days * 2.4),
-    8,
-    24
+    counts?.restaurants ?? Math.round(days * 2.0), // Reduced from 2.4
+    6, // Reduced min from 8
+    20 // Reduced max from 24
   );
   const activities = clamp(
-    counts?.activities ?? Math.round(days * 3.6),
-    12,
-    36
+    counts?.activities ?? Math.round(days * 2.5), // Reduced from 3.6
+    8, // Reduced min from 12
+    25 // Reduced max from 36
   );
   return { days, restaurants, activities };
 }
