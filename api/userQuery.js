@@ -1,8 +1,8 @@
 // api/userQuery.js
-// Node 18 on Vercel (ESM)
+// Node.js runtime on Vercel (CommonJS)
 
-import Anthropic from "@anthropic-ai/sdk";
-import { z } from "zod";
+const Anthropic = require("@anthropic-ai/sdk").default;
+const { z } = require("zod");
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -53,7 +53,7 @@ const REQUIRED_KEYS = [
   "vibe",
 ]; // not used, OK to remove
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "POST only" });
     return;
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
     console.error(err);
     res.status(500).json({ error: String(err?.message || err) });
   }
-}
+};
 
 async function extractIntakeFromText(userText) {
   const system =
