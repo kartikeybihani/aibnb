@@ -640,6 +640,11 @@ function flattenFromCategories(payload, intake) {
       for (const e of cat.examples) {
         const id = String(e.id ?? slugId(e.name));
         const city = e.metadata?.city || fallbackCity;
+        const categoryValue = e.metadata?.type;
+        const normalizedCategory = Array.isArray(categoryValue)
+          ? mapActivityType(categoryValue[0])
+          : mapActivityType(categoryValue);
+
         activities.push({
           id,
           kind: "activity",
@@ -648,7 +653,7 @@ function flattenFromCategories(payload, intake) {
           country: e.metadata?.country || fallbackCountry,
           lat: e.metadata?.lat,
           lng: e.metadata?.lng,
-          category: mapActivityType(e.metadata?.type),
+          category: normalizedCategory,
           tags: e.metadata?.tags || [],
           est_cost_per_person: priceToNumber(e.metadata?.price_range),
           est_duration_min: parseDuration(e.metadata?.duration),
@@ -689,7 +694,9 @@ function polishPayload(payload, cityFallback, scaled) {
     id: a.id || slugId(a.title),
     city: a.city || cityFallback,
     rating_hint: typeof a.rating_hint === "number" ? a.rating_hint : 0.5,
-    category: a.category || "tour",
+    category: Array.isArray(a.category)
+      ? a.category[0] || "tour"
+      : a.category || "tour",
     source: "ai",
   }));
   activities = dedupeByNameCity(activities).slice(0, scaled.activities);
