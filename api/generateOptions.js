@@ -118,8 +118,12 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: "POST only" });
 
   try {
-    console.log("🚀 GenerateOptions API called");
-    console.log("📝 Request body keys:", Object.keys(req.body || {}));
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`🚀 GenerateOptions API called [${requestId}]`);
+    console.log(
+      `📝 Request body keys [${requestId}]:`,
+      Object.keys(req.body || {})
+    );
 
     // Check environment
     const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
@@ -336,7 +340,14 @@ module.exports = async function handler(req, res) {
       }
 
       try {
-        activities = ActivityNorm.array().parse(json.activities || []);
+        // Pre-process activities to map invalid categories before validation
+        const preprocessedActivities = (json.activities || []).map((a) => ({
+          ...a,
+          category: Array.isArray(a.category)
+            ? mapActivityType(a.category[0]) || "tour"
+            : mapActivityType(a.category) || "tour",
+        }));
+        activities = ActivityNorm.array().parse(preprocessedActivities);
         console.log("✅ Activities validated successfully:", activities.length);
       } catch (e) {
         console.warn("❌ Activity validation failed:", e.message);
@@ -344,7 +355,15 @@ module.exports = async function handler(req, res) {
 
       // Create minimal categories if original categories failed
       try {
-        categories = CategorySchema.array().parse(json.categories || []);
+        // Pre-process categories to fix title->name mapping
+        const preprocessedCategories = (json.categories || []).map((cat) => ({
+          ...cat,
+          examples: (cat.examples || []).map((ex) => ({
+            ...ex,
+            name: ex.name || ex.title, // Fix title->name mapping
+          })),
+        }));
+        categories = CategorySchema.array().parse(preprocessedCategories);
       } catch (e) {
         console.warn(
           "❌ Categories validation failed, creating minimal fallback"
@@ -418,8 +437,9 @@ module.exports = async function handler(req, res) {
       },
     });
   } catch (err) {
-    console.error("🚨 MAJOR ERROR - Using Fallback Data!");
-    console.error("generateOptions error:", err);
+    const requestId = Math.random().toString(36).substring(7);
+    console.error(`🚨 MAJOR ERROR - Using Fallback Data! [${requestId}]`);
+    console.error(`generateOptions error [${requestId}]:`, err);
     console.error("Error details:", {
       message: err?.message,
       name: err?.name,
@@ -706,15 +726,54 @@ function mapActivityType(t) {
   if (s === "outdoor") return "outdoor";
 
   // Map other activity types to allowed categories
-  if (["museum", "gallery", "cultural"].some((k) => s.includes(k)))
+  if (["museum", "gallery", "cultural", "art"].some((k) => s.includes(k)))
     return "museum";
   if (["shop", "shopping", "market"].some((k) => s.includes(k)))
     return "shopping";
-  if (["night", "bar", "club"].some((k) => s.includes(k))) return "nightlife";
-  if (["class", "workshop", "cook"].some((k) => s.includes(k))) return "class";
-  if (["tour", "walk", "guided", "sightseeing"].some((k) => s.includes(k)))
+  if (
+    [
+      "night",
+      "bar",
+      "club",
+      "entertainment",
+      "show",
+      "theater",
+      "comedy",
+      "jazz",
+    ].some((k) => s.includes(k))
+  )
+    return "nightlife";
+  if (
+    ["class", "workshop", "cook", "culinary", "lesson"].some((k) =>
+      s.includes(k)
+    )
+  )
+    return "class";
+  if (
+    [
+      "tour",
+      "walk",
+      "guided",
+      "sightseeing",
+      "food_tour",
+      "bike",
+      "helicopter",
+      "transit",
+    ].some((k) => s.includes(k))
+  )
     return "tour";
-  if (["adventure", "relaxation"].some((k) => s.includes(k))) return "outdoor";
+  if (
+    [
+      "adventure",
+      "relaxation",
+      "park",
+      "outdoor",
+      "kayak",
+      "garden",
+      "nature",
+    ].some((k) => s.includes(k))
+  )
+    return "outdoor";
 
   return "outdoor";
 }

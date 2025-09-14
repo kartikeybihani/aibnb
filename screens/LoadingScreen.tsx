@@ -42,6 +42,8 @@ export default function LoadingScreen({
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
   const [options, setOptions] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 2;
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const dotAnim1 = useRef(new Animated.Value(0)).current;
@@ -56,7 +58,7 @@ export default function LoadingScreen({
   // Fetch options from generateOptions API
   const fetchOptions = async () => {
     try {
-      console.log("🎯 Fetching options for intake:", intake);
+      console.log(`🎯 Fetching options for intake (retry ${retryCount}):`, intake);
 
       if (!intake) {
         throw new Error("No intake data provided");
@@ -146,7 +148,15 @@ export default function LoadingScreen({
         options.activities &&
         options.activities.length > 0;
 
-      if (hasValidData) {
+      // Check if this is fallback data (Tokyo restaurants when expecting NYC)
+      const isFallbackData = options.restaurants?.some((r) => 
+        r.title?.includes("Sample") || 
+        r.title?.includes("Kissaten") || 
+        r.title?.includes("Tokyo") ||
+        r.city === "Tokyo"
+      );
+
+      if (hasValidData && !isFallbackData) {
         console.log(
           "🎯 Options loaded with valid data, navigating to SwipeScreen"
         );
@@ -154,12 +164,30 @@ export default function LoadingScreen({
           intake,
           options,
         });
+      } else if (hasValidData && isFallbackData) {
+        console.log("⚠️ Detected fallback data, proceeding anyway...");
+        navigation.navigate("SwipeScreen", {
+          intake,
+          options: {
+            ...options,
+            isFallback: true, // Mark as fallback
+          },
+        });
       } else {
-        console.log("⚠️ Options loaded but insufficient data, retrying...");
-        // Retry after a short delay
-        setTimeout(() => {
-          fetchOptions();
-        }, 2000);
+        if (retryCount < MAX_RETRIES) {
+          console.log(`⚠️ Options loaded but insufficient data, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
+          setRetryCount(prev => prev + 1);
+          setTimeout(() => {
+            fetchOptions();
+          }, 2000);
+        } else {
+          console.log("❌ Max retries reached, proceeding with whatever data we have");
+          // Proceed anyway after max retries
+          navigation.navigate("SwipeScreen", {
+            intake,
+            options: options || { restaurants: [], activities: [], isFallback: true },
+          });
+        }
       }
       return;
     }
