@@ -224,13 +224,13 @@ async function extractIntakeFromText(userText) {
 
     // Extract JSON from the response text (in case there's extra text)
     let jsonText = txt.trim();
-    
+
     // Try to find JSON object in the text
     const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       jsonText = jsonMatch[0];
     }
-    
+
     console.log(`🔍 [${requestId}] Extracted JSON text:`, jsonText);
 
     const parsed = JSON.parse(jsonText);
