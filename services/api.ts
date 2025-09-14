@@ -5,6 +5,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://hackermit.vercel
 
 export class TravelIntakeAPI {
   private sessionId: string;
+  private cache: Map<string, any> = new Map();
 
   constructor() {
     this.sessionId = Date.now().toString();
@@ -87,6 +88,15 @@ export class TravelIntakeAPI {
   }
 
   async composeItinerary(intake: any, options: any, swipes: any): Promise<any> {
+    // Create cache key for this request
+    const cacheKey = `compose-${JSON.stringify({ intake: intake?.destinations, swipes: swipes?.totalSwiped })}`;
+    
+    // Check cache first
+    if (this.cache.has(cacheKey)) {
+      console.log('🎯 Using cached itinerary result');
+      return this.cache.get(cacheKey);
+    }
+
     const request = {
       intake,
       options,
@@ -149,6 +159,9 @@ export class TravelIntakeAPI {
         sessionId: data.sessionId,
       });
       
+      // Cache the result
+      this.cache.set(cacheKey, data);
+      
       return data;
     } catch (error) {
       console.error('💥 ComposeItinerary API Request Failed:', {
@@ -159,6 +172,64 @@ export class TravelIntakeAPI {
         timestamp: new Date().toISOString(),
       });
       
+      throw error;
+    }
+  }
+
+  async preloadOptions(intake: any): Promise<any> {
+    // Create cache key for this request
+    const cacheKey = `options-${JSON.stringify({ destinations: intake?.destinations, tripDays: intake?.trip_length_days })}`;
+    
+    // Check cache first
+    if (this.cache.has(cacheKey)) {
+      console.log('🎯 Using cached options result');
+      return this.cache.get(cacheKey);
+    }
+
+    const tripDays = intake?.trip_length_days || 5;
+    const restaurantCount = Math.max(8, tripDays * 2);
+    const activityCount = Math.max(12, tripDays * 3);
+
+    const request = {
+      intake,
+      counts: {
+        restaurants: restaurantCount,
+        activities: activityCount,
+      },
+    };
+
+    const url = `${API_BASE_URL}/api/generateOptions`;
+    
+    console.log('🎯 Preloading options:', {
+      url,
+      method: 'POST',
+      sessionId: this.sessionId,
+      restaurantCount,
+      activityCount,
+    });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Options API request failed: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      // Cache the result
+      this.cache.set(cacheKey, data);
+      
+      return data;
+    } catch (error) {
+      console.error('💥 Options preload failed:', error);
       throw error;
     }
   }

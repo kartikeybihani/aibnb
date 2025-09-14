@@ -1,97 +1,117 @@
-# Travel Planning App 🌍
+# Wanderly 🌍
 
-A React Native travel planning app with AI-powered trip intake using Anthropic's Claude.
+**AI-Powered Travel Planning That Actually Gets You**
 
-## Features
+Wanderly transforms how people plan trips by combining conversational AI with intelligent itinerary generation. Instead of spending hours researching destinations, comparing options, and building itineraries, users simply describe their dream trip in natural language and get a personalized, detailed travel plan.
 
-- **Smart Trip Intake**: AI extracts structured travel preferences from natural language
-- **Interactive Chat**: Follow-up questions with quick reply chips
-- **Seamless Flow**: From chat to itinerary generation
-- **Beautiful UI**: Modern, intuitive design
+## The Problem
 
-## Setup
+Travel planning is broken. The current process involves juggling multiple apps, websites, and tools:
+- **Research phase**: Hours spent on Google, TripAdvisor, and travel blogs
+- **Booking phase**: Switching between booking platforms, comparing prices
+- **Planning phase**: Manually creating day-by-day itineraries
+- **Coordination phase**: Managing group preferences and logistics
 
-### 1. Install Dependencies
+The result? Most people either over-plan (stressing over every detail) or under-plan (missing amazing experiences), leading to suboptimal travel experiences.
 
-```bash
-npm install
-```
+## Our Solution
 
-### 2. Environment Variables
+Wanderly is the first AI travel assistant that handles the entire planning process through natural conversation. Users describe their trip in plain English, and our AI:
 
-Create a `.env.local` file with:
+1. **Extracts structured preferences** from natural language using Anthropic's Claude
+2. **Generates personalized recommendations** for restaurants, activities, and accommodations
+3. **Creates detailed itineraries** optimized for their travel style and constraints
+4. **Provides interactive refinement** through swipe-based preference learning
 
-```bash
-# Anthropic API Key - Get from https://console.anthropic.com/
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
+## Key Features
 
-# API Base URL for development
-EXPO_PUBLIC_API_URL=http://localhost:3000
-```
+### 🤖 **Intelligent Trip Intake**
+- Natural language processing extracts destinations, dates, budget, party size, and travel style
+- Smart follow-up questions ensure we capture all preferences
+- Context-aware conversation that remembers previous responses
 
-### 3. Start Development
+### 🎯 **Personalized Recommendations**
+- AI-generated restaurant and activity suggestions based on user preferences
+- Swipe-based interface for quick preference learning
+- Real-time itinerary optimization based on user feedback
 
-**Start the API server:**
-```bash
-npm run dev:api
-```
+### 📱 **Seamless User Experience**
+- Beautiful, intuitive mobile-first design
+- No sign-up required for initial planning
+- Cross-platform compatibility (iOS, Android, Web)
 
-**Start the Expo app (in another terminal):**
-```bash
-npm start
-```
+### ⚡ **Technical Excellence**
+- Serverless architecture with Vercel deployment
+- Real-time API integration with Anthropic Claude
+- Optimized performance with intelligent caching
 
-## API Integration
+## Technology Stack
 
-The app uses a serverless function (`api/userQuery.js`) that:
-- Extracts structured travel data using Anthropic Claude
-- Validates and merges partial intake data
-- Provides follow-up questions until complete
-- Returns ready-to-use travel preferences
+- **Frontend**: React Native with Expo for cross-platform mobile development
+- **Backend**: Node.js serverless functions on Vercel
+- **AI**: Anthropic Claude for natural language processing and content generation
+- **State Management**: Zustand for efficient client-side state management
+- **Maps**: React Native Maps for location-based features
+- **Styling**: Custom design system with modern UI components
 
-## Get started
+## Market Opportunity
 
-1. Install dependencies
+The global travel planning market is valued at $1.2 trillion, with digital travel services growing at 15% annually. Current solutions are fragmented and time-consuming:
 
-   ```bash
-   npm install
-   ```
+- **Booking.com**: Focuses on accommodation, not planning
+- **TripAdvisor**: Information overload without personalization
+- **Google Travel**: Basic itinerary suggestions, no AI conversation
+- **Travel agents**: Expensive and slow for simple trips
 
-2. Start the app
+Wanderly addresses the gap between DIY planning tools and expensive travel agents, targeting the growing segment of tech-savvy travelers who want personalized, efficient trip planning.
 
-   ```bash
-   npx expo start
-   ```
+## Business Model
 
-In the output, you'll find options to open the app in a
+- **Freemium**: Free basic trip planning with limited recommendations
+- **Premium**: $9.99/month for unlimited trips, advanced AI features, and booking integration
+- **Enterprise**: White-label solutions for travel agencies and corporate travel
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## How It Works
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+1. **Natural Conversation**: Users describe their trip in plain English - "I want to go to Tokyo for 5 days with my partner, we love food and want to stay under $200/day"
 
-## Get a fresh project
+2. **AI Understanding**: Our system extracts key details (destinations, dates, budget, preferences) and asks smart follow-up questions to fill any gaps
 
-When you're ready, run:
+3. **Personalized Recommendations**: We generate curated lists of restaurants, activities, and experiences tailored to their specific interests and constraints
 
-```bash
-npm run reset-project
-```
+4. **Interactive Refinement**: Users swipe through recommendations to teach our AI their preferences, which immediately improves the suggestions
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+5. **Complete Itinerary**: The final result is a detailed, day-by-day travel plan optimized for their style, budget, and interests
 
-## Learn more
+## Roadmap
 
-To learn more about developing your project with Expo, look at the following resources:
+### Phase 1 (Current)
+- ✅ Core AI trip intake system
+- ✅ Basic itinerary generation
+- ✅ Mobile app MVP
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Phase 2 (Q2 2024)
+- 🔄 Booking integration with major travel APIs
+- 🔄 Group trip planning features
+- 🔄 Advanced personalization algorithms
 
-## Join the community
+### Phase 3 (Q3 2024)
+- 📋 Multi-language support
+- 📋 Offline mode capabilities
+- 📋 Social sharing and collaboration
 
-Join our community of developers creating universal apps.
+## Team
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+We're a team of travel enthusiasts and AI engineers passionate about making travel planning effortless and enjoyable. Our backgrounds span machine learning, mobile development, and travel industry experience.
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on how to get started.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+**Ready to revolutionize travel planning?** [Try Wanderly](https://wanderly.app) or [View Demo](https://demo.wanderly.app)

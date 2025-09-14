@@ -398,8 +398,12 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
 
     // Handle both API data format and fallback hardcoded format
     const optionType = currentOption.type || currentOption.kind || "restaurant";
-    const suffix = optionType === "activity" ? "-activity" : 
-                   optionType === "accommodation" ? "-accommodation" : "-restaurant";
+    const suffix =
+      optionType === "activity"
+        ? "-activity"
+        : optionType === "accommodation"
+        ? "-accommodation"
+        : "-restaurant";
     const currentOptionId =
       currentOption.id?.toString() ||
       (currentOption.name || currentOption.title)
@@ -429,10 +433,10 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
     const nextIndex = (currentRestaurantIndex + 1) % availableOptions.length;
     setCurrentRestaurantIndex(nextIndex);
 
-    // Minimum swipes before allowing itinerary composition
+    // Reduced minimum swipes for faster completion
     const minSwipesRequired = Math.max(
-      5,
-      Math.min(availableOptions.length, 10)
+      3, // Reduced from 5 to 3
+      Math.min(availableOptions.length, 8) // Reduced from 10 to 8
     );
 
     // Check if we've swiped enough and completed a cycle, or if we've swiped a lot
@@ -440,8 +444,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
       (swipeData.totalSwiped >= minSwipesRequired &&
         nextIndex === 0 &&
         currentRestaurantIndex === availableOptions.length - 1) ||
-      swipeData.totalSwiped >= availableOptions.length * 2 || // After 2 full cycles
-      swipeData.totalSwiped >= 20; // Hard limit for very long lists
+      swipeData.totalSwiped >= availableOptions.length * 1.5 || // After 1.5 full cycles (reduced from 2)
+      swipeData.totalSwiped >= 15; // Hard limit for very long lists (reduced from 20)
 
     if (shouldComposeItinerary) {
       console.log(
@@ -449,7 +453,7 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
       );
       setTimeout(() => {
         composeItinerary();
-      }, 1000); // Small delay to let the animation complete
+      }, 500); // Reduced delay from 1000ms to 500ms
     }
 
     // Prepare the next "next" card off-screen above
@@ -691,7 +695,7 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                 style={{ width: 24, height: 24, marginRight: 12 }}
                 resizeMode="contain"
               />
-              <Text style={styles.headerTitle}>AiBnB</Text>
+              <Text style={styles.headerTitle}>Wanderly</Text>
             </View>
             <View style={styles.headerRight}>
               {swipeData.totalSwiped >= 3 && (
@@ -762,7 +766,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                         styles.typeIndicator,
                         availableOptions[nextIndex]?.type === "activity"
                           ? styles.activityIndicator
-                          : availableOptions[nextIndex]?.type === "accommodation"
+                          : availableOptions[nextIndex]?.type ===
+                            "accommodation"
                           ? styles.accommodationIndicator
                           : styles.restaurantIndicator,
                       ]}
@@ -771,7 +776,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                         name={
                           availableOptions[nextIndex]?.type === "activity"
                             ? "compass-outline"
-                            : availableOptions[nextIndex]?.type === "accommodation"
+                            : availableOptions[nextIndex]?.type ===
+                              "accommodation"
                             ? "bed-outline"
                             : "restaurant-outline"
                         }
@@ -781,7 +787,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                       <Text style={styles.typeText}>
                         {availableOptions[nextIndex]?.type === "activity"
                           ? "ACTIVITY"
-                          : availableOptions[nextIndex]?.type === "accommodation"
+                          : availableOptions[nextIndex]?.type ===
+                            "accommodation"
                           ? "STAY"
                           : "DINING"}
                       </Text>
@@ -986,21 +993,29 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                                 ? "school-outline"
                                 : "star-outline"
                               : currentRestaurant?.type === "accommodation"
-                              ? currentRestaurant?.accommodation_type === "hotel"
+                              ? currentRestaurant?.accommodation_type ===
+                                "hotel"
                                 ? "business-outline"
-                                : currentRestaurant?.accommodation_type === "hostel"
+                                : currentRestaurant?.accommodation_type ===
+                                  "hostel"
                                 ? "people-outline"
-                                : currentRestaurant?.accommodation_type === "airbnb"
+                                : currentRestaurant?.accommodation_type ===
+                                  "airbnb"
                                 ? "home-outline"
-                                : currentRestaurant?.accommodation_type === "boutique"
+                                : currentRestaurant?.accommodation_type ===
+                                  "boutique"
                                 ? "diamond-outline"
-                                : currentRestaurant?.accommodation_type === "resort"
+                                : currentRestaurant?.accommodation_type ===
+                                  "resort"
                                 ? "umbrella-outline"
-                                : currentRestaurant?.accommodation_type === "apartment"
+                                : currentRestaurant?.accommodation_type ===
+                                  "apartment"
                                 ? "business-outline"
-                                : currentRestaurant?.accommodation_type === "guesthouse"
+                                : currentRestaurant?.accommodation_type ===
+                                  "guesthouse"
                                 ? "home-outline"
-                                : currentRestaurant?.accommodation_type === "capsule"
+                                : currentRestaurant?.accommodation_type ===
+                                  "capsule"
                                 ? "cube-outline"
                                 : "bed-outline"
                               : "restaurant-outline"
@@ -1041,7 +1056,8 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                         </Text>
                       </View>
 
-                      {(currentRestaurant?.est_cost_per_person || currentRestaurant?.est_cost_per_night) && (
+                      {(currentRestaurant?.est_cost_per_person ||
+                        currentRestaurant?.est_cost_per_night) && (
                         <View style={styles.detailRow}>
                           <Ionicons
                             name="card-outline"
@@ -1079,7 +1095,9 @@ export default function SwipeScreen({ navigation, route }: SwipeScreenProps) {
                               color={colors.subtext}
                             />
                             <Text style={styles.detailText}>
-                              {currentRestaurant.amenities.slice(0, 3).join(", ")}
+                              {currentRestaurant.amenities
+                                .slice(0, 3)
+                                .join(", ")}
                               {currentRestaurant.amenities.length > 3 && "..."}
                             </Text>
                           </View>

@@ -9,7 +9,7 @@ export default function Terms() {
             href="/"
             className="text-[var(--primary-orange)] hover:underline mb-8 inline-block"
           >
-            ← Back to AIbnb
+            ← Back to Wanderly
           </Link>
 
           <h1 className="text-4xl font-bold text-[var(--text-primary)] mb-8">
@@ -18,7 +18,7 @@ export default function Terms() {
 
           <div className="prose prose-lg max-w-none">
             <p className="text-[var(--text-sub)] mb-6">
-              Welcome to AIbnb. These terms of service govern your use of our
+              Welcome to Wanderly. These terms of service govern your use of our
               platform.
             </p>
 
@@ -26,7 +26,8 @@ export default function Terms() {
               Acceptance of Terms
             </h2>
             <p className="text-[var(--text-sub)] mb-4">
-              By using AIbnb, you agree to be bound by these terms of service.
+              By using Wanderly, you agree to be bound by these terms of
+              service.
             </p>
 
             <h2 className="text-2xl font-semibold text-[var(--text-primary)] mb-4">

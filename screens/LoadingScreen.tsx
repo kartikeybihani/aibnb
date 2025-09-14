@@ -69,8 +69,9 @@ export default function LoadingScreen({
 
       setIsLoading(true);
       const tripDays = intake?.trip_length_days || 5;
-      const restaurantCount = Math.max(12, tripDays * 3); // 3 restaurants per day minimum
-      const activityCount = Math.max(18, tripDays * 4); // 4 activities per day minimum
+      // Reduced counts for faster generation
+      const restaurantCount = Math.max(8, tripDays * 2); // 2 restaurants per day minimum
+      const activityCount = Math.max(12, tripDays * 3); // 3 activities per day minimum
 
       console.log(
         `📊 Requesting ${restaurantCount} restaurants and ${activityCount} activities for ${tripDays}-day trip`
@@ -134,10 +135,43 @@ export default function LoadingScreen({
     }
   };
 
+  // Check for cached options first
+  const checkCachedOptions = async () => {
+    try {
+      // Import the API service to check cache
+      const { TravelIntakeAPI } = await import("../services/api");
+      const api = new TravelIntakeAPI();
+
+      // Try to get cached options
+      const cacheKey = `options-${JSON.stringify({
+        destinations: intake?.destinations,
+        tripDays: intake?.trip_length_days,
+      })}`;
+
+      // Since we can't directly access the cache, we'll try the preload method
+      // which will return cached data if available
+      const cachedData = await api.preloadOptions(intake);
+
+      if (cachedData && cachedData.status === "ok" && cachedData.options) {
+        console.log("🎯 Using cached options from background preload");
+        setOptions(cachedData.options);
+        setIsLoading(false);
+        return true;
+      }
+    } catch (error) {
+      console.log("⚠️ No cached options available, fetching fresh data");
+    }
+    return false;
+  };
+
   useEffect(() => {
-    // Fetch options first
+    // Check for cached options first, then fetch if needed
     if (intake) {
-      fetchOptions();
+      checkCachedOptions().then((hasCached) => {
+        if (!hasCached) {
+          fetchOptions();
+        }
+      });
     }
   }, []);
 
@@ -187,7 +221,7 @@ export default function LoadingScreen({
           setRetryCount((prev) => prev + 1);
           setTimeout(() => {
             fetchOptions();
-          }, 2000);
+          }, 1000); // Reduced retry delay from 2000ms to 1000ms
         } else {
           console.log(
             "❌ Max retries reached, proceeding with whatever data we have"

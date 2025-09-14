@@ -102,10 +102,16 @@ export default function ChatScreen({ navigation, route }: ChatScreenProps) {
         setMessages((prev) => [...prev, successMessage]);
         setCurrentIntake(response.intake || {});
 
-        // Navigate to loading screen after a brief delay
-        setTimeout(() => {
-          navigation.navigate("Loading", { intake: response.intake });
-        }, 1500);
+        // Start preloading options in the background
+        api.preloadOptions(response.intake).catch((error) => {
+          console.log(
+            "⚠️ Background preload failed, will load normally:",
+            error
+          );
+        });
+
+        // Navigate to loading screen immediately - no delay
+        navigation.navigate("Loading", { intake: response.intake });
       } else {
         // Need follow-up questions
         const followUpMessage: Message = {

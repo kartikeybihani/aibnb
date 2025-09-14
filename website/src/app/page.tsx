@@ -27,9 +27,9 @@ function Navigation() {
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex-shrink-0 flex items-center space-x-3">
-            <img src="/applogo.png" alt="AIbnb Logo" className="w-8 h-8" />
+            <img src="/applogo.png" alt="Wanderly Logo" className="w-8 h-8" />
             <span className="text-2xl font-bold text-[var(--primary-orange)]">
-              AIbnb
+              Wanderly
             </span>
           </div>
 
@@ -276,7 +276,7 @@ function ComingSoonModal({
 
     // Show toast and close modal
     onShowToast?.(
-      "Thanks! You're on the waitlist. We'll notify you when AIbnb launches!"
+      "Thanks! You're on the waitlist. We'll notify you when Wanderly launches!"
     );
     setEmail("");
     onClose();
@@ -328,7 +328,7 @@ function ComingSoonModal({
           Coming soon
         </h2>
         <p className="text-[var(--text-sub)] text-sm mb-6">
-          Be first to try AIbnb when we open
+          Be first to try Wanderly when we open
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -472,7 +472,7 @@ function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
           <div className="text-sm text-[var(--text-sub)]">
-            © 2024 AIbnb. All rights reserved.
+            © 2025 Wanderly. All rights reserved.
           </div>
           <div className="flex space-x-6">
             <a

@@ -8,15 +8,15 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "AIbnb - Book your next vacation",
+  title: "Wanderly - Book your next vacation",
   description:
     "Tell me where, how long, who is coming and your vibe. AI-powered travel planning that creates your perfect vacation in seconds.",
   keywords: "travel, vacation, AI, planning, booking, itinerary",
-  authors: [{ name: "AIbnb" }],
+  authors: [{ name: "Wanderly" }],
   viewport: "width=device-width, initial-scale=1",
   robots: "index, follow",
   openGraph: {
-    title: "AIbnb - Book your next vacation",
+    title: "Wanderly - Book your next vacation",
     description:
       "AI-powered travel planning that creates your perfect vacation in seconds.",
     type: "website",
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "AIbnb - Book your next vacation",
+    title: "Wanderly - Book your next vacation",
     description:
       "AI-powered travel planning that creates your perfect vacation in seconds.",
   },
