@@ -58,7 +58,7 @@ const REQUIRED_KEYS = [
 ];
 
 // ----- HTTP handler -----
-module.exports = async function handler(req, res) {
+module.exports = async (req, res) => {
   try {
     if (req.method !== "POST") {
       res.status(405).json({ error: "POST only" });
