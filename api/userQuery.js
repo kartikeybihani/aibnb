@@ -97,6 +97,27 @@ module.exports = async function handler(req, res) {
       sessionId,
     });
 
+    // Check if user is responding "No, that's everything" to final follow-up
+    if (
+      userText &&
+      userText.toLowerCase().includes("no") &&
+      (userText.toLowerCase().includes("everything") ||
+        userText.toLowerCase().includes("that's all"))
+    ) {
+      console.log(`✅ [${requestId}] User confirmed trip is complete`);
+      const finalIntake = partialIntake || {};
+      finalIntake.extras = finalIntake.extras || {};
+      finalIntake.extras.final_followup_asked = true;
+      finalIntake.extras.user_confirmed_complete = true;
+
+      res.status(200).json({
+        status: "ready",
+        sessionId,
+        intake: finalIntake,
+      });
+      return;
+    }
+
     let extracted = {};
     if (userText) {
       console.log(`🤖 [${requestId}] Extracting intake from text...`);
@@ -165,6 +186,7 @@ async function extractIntakeFromText(userText) {
       "  - thrill/hike/intense -> pace: adventurous\n" +
       "- Dates must be ISO yyyy-mm-dd when present\n" +
       "- Put anything that does not fit a known field into extras\n" +
+      "- For additional details (like special requests, preferences, activities), store them in extras.additional_details as an array of strings\n" +
       "- Only include fields that have values, omit empty/undefined fields";
 
     console.log(`📤 [${requestId}] Sending request to Anthropic...`, {
@@ -451,8 +473,36 @@ function processIntake(partialIntake, extracted, sessionId, res, requestId) {
   }
 
   if (!missing.length && !extraFollowUp) {
-    console.log(`✅ [${requestId}] Intake complete, ready for trip generation`);
-    res.status(200).json({ status: "ready", sessionId, intake: merged });
+    // Check if we've already asked the final follow-up question
+    if (merged.extras && merged.extras.final_followup_asked) {
+      console.log(
+        `✅ [${requestId}] Intake complete, ready for trip generation`
+      );
+      res.status(200).json({ status: "ready", sessionId, intake: merged });
+      return;
+    }
+
+    // Ask final follow-up question
+    const finalFollowUp = {
+      question: "Is there anything else you'd like to add to your trip?",
+      chips: ["Yes, add more details", "No, that's everything"],
+    };
+
+    console.log(`❓ [${requestId}] Final follow-up needed:`, {
+      question: finalFollowUp.question,
+      chips: finalFollowUp.chips,
+    });
+
+    // Mark that we've asked the final follow-up
+    merged.extras = merged.extras || {};
+    merged.extras.final_followup_asked = true;
+
+    res.status(200).json({
+      status: "need_follow_up",
+      sessionId,
+      partial: merged,
+      follow_up: finalFollowUp,
+    });
     return;
   }
 
