@@ -157,12 +157,32 @@ module.exports = async function handler(req, res) {
     const rawText = msg?.content?.[0]?.text || "{}";
     const json = tryParseJson(rawText);
 
+    // Ensure required fields exist
+    if (!json.categories) {
+      json.categories = [];
+    }
+    if (!json.restaurants) {
+      json.restaurants = [];
+    }
+    if (!json.activities) {
+      json.activities = [];
+    }
+
     // If the model only returned categories, flatten them to normalized arrays
     if (!json.restaurants || !json.activities) {
       const flat = flattenFromCategories(json, intake);
       json.restaurants = flat.restaurants;
       json.activities = flat.activities;
       json.guardrails ||= {
+        dont_repeat_restaurants: true,
+        max_same_cuisine_per_trip: 2,
+        max_commute_min_per_leg: 30,
+      };
+    }
+
+    // Ensure guardrails exist
+    if (!json.guardrails) {
+      json.guardrails = {
         dont_repeat_restaurants: true,
         max_same_cuisine_per_trip: 2,
         max_commute_min_per_leg: 30,
