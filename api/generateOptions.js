@@ -28,10 +28,8 @@ const ExampleBase = z.object({
       meal_type: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
       amenities: z.array(z.string()).optional(),
 
-      // activity extras
-      type: z
-        .enum(["outdoor", "museum", "tour", "shopping", "nightlife", "class"])
-        .optional(),
+      // activity extras (allow any string; normalize later)
+      type: z.string().optional(),
       duration: z.string().optional(),
       difficulty: z.enum(["easy", "moderate", "challenging"]).optional(),
       best_time: z
@@ -212,19 +210,13 @@ module.exports = async function handler(req, res) {
       throw new Error(errorMsg);
     }
 
-    // Ensure required fields exist
-    if (!json.categories) {
-      json.categories = [];
-    }
-    if (!json.restaurants) {
-      json.restaurants = [];
-    }
-    if (!json.activities) {
-      json.activities = [];
-    }
+    // Ensure arrays exist
+    json.categories = Array.isArray(json.categories) ? json.categories : [];
+    json.restaurants = Array.isArray(json.restaurants) ? json.restaurants : [];
+    json.activities = Array.isArray(json.activities) ? json.activities : [];
 
-    // If the model only returned categories, flatten them to normalized arrays
-    if (!json.restaurants || !json.activities) {
+    // If the model only returned categories or either list is empty, flatten
+    if (!json.restaurants?.length || !json.activities?.length) {
       const flat = flattenFromCategories(json, intake);
       json.restaurants = flat.restaurants;
       json.activities = flat.activities;
@@ -790,7 +782,7 @@ function buildFallback() {
             name: "Modern Art Stop",
             metadata: {
               city: "Tokyo",
-              type: "cultural",
+              type: "museum",
               duration: "2 hours",
               rating_hint: 0.5,
             },
@@ -799,7 +791,7 @@ function buildFallback() {
             name: "Ueno Park Stroll",
             metadata: {
               city: "Tokyo",
-              type: "sightseeing",
+              type: "outdoor",
               duration: "2 hours",
               rating_hint: 0.5,
             },
