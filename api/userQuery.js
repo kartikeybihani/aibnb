@@ -356,8 +356,7 @@ function findMissing(x) {
   const misses = [];
   if (!x.destinations?.length) misses.push("destinations");
   const hasDates = !!(x.dates?.start && x.dates?.end);
-  const hasDays = Number.isFinite(x.trip_length_days) && x.trip_length_days > 0;
-  if (!hasDates && !hasDays) misses.push("trip_length_or_dates");
+  if (!hasDates) misses.push("dates");
   const adults = x.party?.adults;
   if (!(Number.isFinite(adults) && adults > 0)) misses.push("party_size");
   const hasBudget =
@@ -374,10 +373,10 @@ function buildFollowUp(kind, x) {
       question: "Where are you going",
       chips: ["Tokyo", "Kyoto", "Osaka", "Rome", "Florence", "Venice"],
     };
-  if (kind === "trip_length_or_dates")
+  if (kind === "dates")
     return {
-      question: "How long is the trip or what are the exact dates",
-      chips: ["3 days", "5 days", "7 days", "Enter dates"],
+      question: "What are your exact travel dates (start and end)",
+      chips: ["Enter dates", "This week", "Next month", "Summer 2024"],
     };
   if (kind === "party_size")
     return {
