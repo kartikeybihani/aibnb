@@ -155,7 +155,9 @@ module.exports = async function handler(req, res) {
     });
 
     const rawText = msg?.content?.[0]?.text || "{}";
+    console.log("Raw AI response:", rawText);
     const json = tryParseJson(rawText);
+    console.log("Parsed JSON:", JSON.stringify(json, null, 2));
 
     // Ensure required fields exist
     if (!json.categories) {
